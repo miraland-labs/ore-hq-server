@@ -1,164 +1,157 @@
+use cached::proc_macro::cached;
 use std::{
-    io::{Cursor, Read},
-    time::Duration,
+    io::Cursor,
+    time::{SystemTime, UNIX_EPOCH},
 };
 
-use cached::proc_macro::cached;
+use drillx::Solution;
 use ore_api::{
     consts::{
-        CONFIG_ADDRESS, MINT_ADDRESS, PROOF, TOKEN_DECIMALS, TOKEN_DECIMALS_V1, TREASURY_ADDRESS,
+        BUS_ADDRESSES, BUS_COUNT, CONFIG_ADDRESS, MINT_ADDRESS, PROOF, TREASURY_ADDRESS,
+        TOKEN_DECIMALS,
     },
-    state::{Config, Proof, Treasury},
+    instruction,
+    state::{Bus, Config, Proof},
 };
-use ore_utils::AccountDeserialize;
-// use serde::Deserialize;
-use solana_client::client_error::{ClientError, ClientErrorKind};
+pub use ore_utils::AccountDeserialize;
+use rand::Rng;
 use solana_client::nonblocking::rpc_client::RpcClient;
-use solana_program::{pubkey::Pubkey, sysvar};
-use solana_sdk::{clock::Clock, hash::Hash};
+use solana_sdk::{
+    instruction::Instruction, pubkey::Pubkey,
+};
 use spl_associated_token_account::get_associated_token_address;
-use tokio::time::sleep;
 
-pub const BLOCKHASH_QUERY_RETRIES: usize = 5;
-pub const BLOCKHASH_QUERY_DELAY: u64 = 500;
+pub const ORE_TOKEN_DECIMALS: u8 = TOKEN_DECIMALS;
 
-pub async fn _get_treasury(client: &RpcClient) -> Treasury {
-    let data = client
-        .get_account_data(&TREASURY_ADDRESS)
-        .await
-        .expect("Failed to get treasury account");
-    *Treasury::try_from_bytes(&data).expect("Failed to parse treasury account")
+pub fn get_auth_ix(signer: Pubkey) -> Instruction {
+    let proof = proof_pubkey(signer);
+
+    instruction::auth(proof)
 }
 
-pub async fn get_config(client: &RpcClient) -> Config {
-    // MI: vanilla
-    // let data = client
-    //     .get_account_data(&CONFIG_ADDRESS)
-    //     .await
-    //     .expect("Failed to get config account");
+pub fn get_mine_ix(signer: Pubkey, solution: Solution, bus: usize) -> Instruction {
+    instruction::mine(signer, signer, BUS_ADDRESSES[bus], solution)
+}
 
-    let data: Vec<u8>;
-    loop {
-        match client.get_account_data(&CONFIG_ADDRESS).await {
-            Ok(d) => {
-                data = d;
-                break;
-            }
-            Err(e) => {
-                println!("get config account error: {:?}", e);
-                println!("retry to get config account...");
+pub fn get_register_ix(signer: Pubkey) -> Instruction {
+    instruction::open(signer, signer, signer)
+}
+
+pub async fn _get_config(client: &RpcClient) -> Result<ore_api::state::Config, String> {
+    let data = client.get_account_data(&CONFIG_ADDRESS).await;
+    match data {
+        Ok(data) => {
+            let config = Config::try_from_bytes(&data);
+            if let Ok(config) = config {
+                return Ok(*config);
+            } else {
+                return Err("Failed to parse config account".to_string());
             }
         }
+        Err(_) => return Err("Failed to get config account".to_string()),
     }
-
-    *Config::try_from_bytes(&data).expect("Failed to parse config account")
 }
 
-pub async fn get_proof_with_authority(client: &RpcClient, authority: Pubkey) -> Proof {
-    let proof_address = proof_pubkey(authority);
-    get_proof(client, proof_address).await
-}
-
-pub async fn get_updated_proof_with_authority(
+// MI
+pub async fn get_proof_and_best_bus(
     client: &RpcClient,
     authority: Pubkey,
-    lash_hash_at: i64,
-) -> Proof {
-    loop {
-        let proof = get_proof_with_authority(client, authority).await;
-        if proof.last_hash_at.gt(&lash_hash_at) {
-            return proof;
-        }
-        std::thread::sleep(Duration::from_millis(1000));
-    }
-}
+) -> Result<(Proof, (/* bus index: */ usize, /* bus address: */ Pubkey)), ()> {
+    let account_pubkeys = vec![
+        proof_pubkey(authority),
+        BUS_ADDRESSES[0],
+        BUS_ADDRESSES[1],
+        BUS_ADDRESSES[2],
+        BUS_ADDRESSES[3],
+        BUS_ADDRESSES[4],
+        BUS_ADDRESSES[5],
+        BUS_ADDRESSES[6],
+        BUS_ADDRESSES[7],
+    ];
+    let accounts = client.get_multiple_accounts(&account_pubkeys).await;
+    if let Ok(accounts) = accounts {
+        let proof = if let Some(account) = &accounts[0] {
+            *Proof::try_from_bytes(&account.data).expect("Failed to parse proof account")
+        } else {
+            return Err(());
+        };
 
-pub async fn get_proof(client: &RpcClient, address: Pubkey) -> Proof {
-    let data = client
-        .get_account_data(&address)
-        .await
-        .expect("Failed to get proof account");
-    *Proof::try_from_bytes(&data).expect("Failed to parse proof account")
-}
+        // Fetch the bus with the largest balance
+        let mut top_bus_balance: u64 = 0;
+        let mut top_bus_id = 0;
+        let mut top_bus = BUS_ADDRESSES[0];
+        for account in &accounts[1..] {
+            if let Some(account) = account {
+                if let Ok(bus) = Bus::try_from_bytes(&account.data) {
+                    if bus.rewards.gt(&top_bus_balance) {
+                        top_bus_balance = bus.rewards;
+                        top_bus_id = bus.id as usize;
+                        top_bus = BUS_ADDRESSES[top_bus_id];
 
-pub async fn get_clock(client: &RpcClient) -> Clock {
-    // MI: vanilla
-    // let data = client
-    //     .get_account_data(&sysvar::clock::ID)
-    //     .await
-    //     .expect("Failed to get clock account");
-
-    let data: Vec<u8>;
-    loop {
-        match client.get_account_data(&sysvar::clock::ID).await {
-            Ok(d) => {
-                data = d;
-                break;
+                    }
+                } else {
+                    return Err(());
+                }
             }
-            Err(e) => {
-                println!("get clock account error: {:?}", e);
-                println!("retry to get clock account...");
+        }
+
+        Ok((proof, (top_bus_id, top_bus)))
+    } else {
+        Err(())
+    }
+}
+
+// MI
+async fn _find_bus(rpc_client: &RpcClient) -> Pubkey {
+    // Fetch the bus with the largest balance
+    if let Ok(accounts) = rpc_client.get_multiple_accounts(&BUS_ADDRESSES).await {
+        let mut top_bus_balance: u64 = 0;
+        let mut top_bus = BUS_ADDRESSES[0];
+        for account in accounts {
+            if let Some(account) = account {
+                if let Ok(bus) = Bus::try_from_bytes(&account.data) {
+                    if bus.rewards.gt(&top_bus_balance) {
+                        top_bus_balance = bus.rewards;
+                        top_bus = BUS_ADDRESSES[bus.id as usize];
+                    }
+                }
             }
         }
+        return top_bus;
     }
 
-    bincode::deserialize::<Clock>(&data).expect("Failed to deserialize clock")
+    // Otherwise return a random bus
+    let i = rand::thread_rng().gen_range(0..BUS_COUNT);
+    BUS_ADDRESSES[i]
 }
 
-pub fn amount_u64_to_string(amount: u64) -> String {
-    amount_u64_to_f64(amount).to_string()
-}
-
-pub fn amount_u64_to_f64(amount: u64) -> f64 {
-    (amount as f64) / 10f64.powf(TOKEN_DECIMALS as f64)
-}
-
-pub fn amount_f64_to_u64(amount: f64) -> u64 {
-    (amount * 10f64.powf(TOKEN_DECIMALS as f64)) as u64
-}
-
-pub fn amount_f64_to_u64_v1(amount: f64) -> u64 {
-    (amount * 10f64.powf(TOKEN_DECIMALS_V1 as f64)) as u64
-}
-
-pub fn ask_confirm(question: &str) -> bool {
-    println!("{}", question);
-    loop {
-        let mut input = [0];
-        let _ = std::io::stdin().read(&mut input);
-        match input[0] as char {
-            'y' | 'Y' => return true,
-            'n' | 'N' => return false,
-            _ => println!("y/n only please."),
+pub async fn get_proof(client: &RpcClient, authority: Pubkey) -> Result<Proof, String> {
+    let proof_address = proof_pubkey(authority);
+    let data = client.get_account_data(&proof_address).await;
+    match data {
+        Ok(data) => {
+            let proof = Proof::try_from_bytes(&data);
+            if let Ok(proof) = proof {
+                return Ok(*proof);
+            } else {
+                return Err("Failed to parse proof account".to_string());
+            }
         }
+        Err(_) => return Err("Failed to get proof account".to_string()),
     }
 }
 
-pub async fn get_latest_blockhash_with_retries(
-    client: &RpcClient,
-) -> Result<(Hash, u64), ClientError> {
-    let mut attempts = 0;
 
-    loop {
-        if let Ok((hash, slot)) = client
-            .get_latest_blockhash_with_commitment(client.commitment())
-            .await
-        {
-            return Ok((hash, slot));
-        }
-
-        // Retry
-        sleep(Duration::from_millis(BLOCKHASH_QUERY_DELAY)).await;
-        attempts += 1;
-        if attempts >= BLOCKHASH_QUERY_RETRIES {
-            return Err(ClientError {
-                request: None,
-                kind: ClientErrorKind::Custom(
-                    "Max retries reached for latest blockhash query".into(),
-                ),
-            });
-        }
-    }
+pub fn get_cutoff(proof: Proof, buffer_time: u64) -> i64 {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("Failed to get time")
+        .as_secs() as i64;
+    proof
+        .last_hash_at
+        .saturating_add(60)
+        .saturating_sub(buffer_time as i64)
+        .saturating_sub(now)
 }
 
 // MI

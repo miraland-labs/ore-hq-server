@@ -535,116 +535,238 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 fee_type, fee
                             );
                             info!("attempt: {}", i + 1);
-                            let sig = rpc_client
+
+                            match rpc_client
                                 .send_and_confirm_transaction_with_spinner(&tx)
-                                .await;
-                            if let Ok(sig) = sig {
-                                info!("Success!!");
-                                info!("Sig: {}", sig);
-                                if !*no_sound_notification {
-                                    utils::play_sound();
-                                }
+                                .await
+                            {
+                                Ok(sig) => {
+                                    info!("Success!!");
+                                    info!("Sig: {}", sig);
+                                    if !*no_sound_notification {
+                                        utils::play_sound();
+                                    }
 
-                                // update proof
-                                // limit number of checking no more than 10
-                                let mut num_checking = 0;
-                                loop {
-                                    info!("Waiting for proof hash update");
-                                    let latest_proof = { app_proof.lock().await.clone() };
+                                    // update proof
+                                    // limit number of checking no more than 10
+                                    let mut num_checking = 0;
+                                    loop {
+                                        info!("Waiting for proof hash update");
+                                        let latest_proof = { app_proof.lock().await.clone() };
 
-                                    if old_proof.challenge.eq(&latest_proof.challenge) {
-                                        info!("Proof challenge not updated yet..");
-                                        old_proof = latest_proof;
-                                        tokio::time::sleep(Duration::from_millis(1000)).await;
-                                        num_checking += 1;
-                                        if num_checking < 10 {
-                                            continue;
+                                        if old_proof.challenge.eq(&latest_proof.challenge) {
+                                            info!("Proof challenge not updated yet..");
+                                            old_proof = latest_proof;
+                                            tokio::time::sleep(Duration::from_millis(1000)).await;
+                                            num_checking += 1;
+                                            if num_checking < 10 {
+                                                continue;
+                                            } else {
+                                                info!("No proof hash update detected after 10 checkpoints. No more waiting, just keep going...");
+                                                break;
+                                            }
+                                            // MI
+                                            // continue;
                                         } else {
-                                            info!("No proof hash update detected after 10 checkpoints. No more waiting, just keep going...");
+                                            info!(
+                                                "Proof challenge updated! Checking rewards earned."
+                                            );
+                                            let balance = (latest_proof.balance as f64)
+                                                / 10f64.powf(ORE_TOKEN_DECIMALS as f64);
+                                            info!("New balance: {}", balance);
+                                            let rewards = latest_proof.balance - old_proof.balance;
+                                            let dec_rewards = (rewards as f64)
+                                                / 10f64.powf(ORE_TOKEN_DECIMALS as f64);
+                                            info!("Earned: {} ORE", dec_rewards);
+
+                                            let submissions = {
+                                                app_epoch_hashes.read().await.submissions.clone()
+                                            };
+
+                                            let mut total_hashpower: u64 = 0;
+
+                                            for submission in submissions.iter() {
+                                                total_hashpower += submission.1 .1
+                                            }
+
+                                            let _ = mine_success_sender.send(
+                                                MessageInternalMineSuccess {
+                                                    difficulty,
+                                                    total_balance: balance,
+                                                    rewards,
+                                                    total_hashpower,
+                                                    submissions,
+                                                },
+                                            );
+
+                                            {
+                                                let mut mut_proof = app_proof.lock().await;
+                                                *mut_proof = latest_proof;
+                                            }
+
+                                            // reset nonce
+                                            {
+                                                let mut nonce = app_nonce.lock().await;
+                                                *nonce = 0;
+                                            }
+                                            // reset epoch hashes
+                                            {
+                                                info!("reset epoch hashes");
+                                                let mut mut_epoch_hashes =
+                                                    app_epoch_hashes.write().await;
+                                                mut_epoch_hashes.best_hash.solution = None;
+                                                mut_epoch_hashes.best_hash.difficulty = 0;
+                                                mut_epoch_hashes.submissions = HashMap::new();
+                                            }
                                             break;
                                         }
+                                    }
+                                    break;
+                                }
+                                Err(err) => {
+                                    error!("Error: {}", err);
+                                    // sent error
+                                    if i >= 4 {
+                                        // warn!("Failed to send after 5 attempts. Discarding and refreshing data.");
+                                        // // MI: from time to time, rpc will rapidly fail 5 attempts, so the next part comment out
+                                        // // will end and fail the whole tx send-and-confirm in very short time.
+                                        // // reset nonce
+                                        // {
+                                        //     let mut nonce = app_nonce.lock().await;
+                                        //     *nonce = 0;
+                                        // }
+                                        // // reset epoch hashes
+                                        // {
+                                        //     info!("reset epoch hashes");
+                                        //     let mut mut_epoch_hashes = app_epoch_hashes.write().await;
+                                        //     mut_epoch_hashes.best_hash.solution = None;
+                                        //     mut_epoch_hashes.best_hash.difficulty = 0;
+                                        //     mut_epoch_hashes.submissions = HashMap::new();
+                                        // }
+
+                                        // // break for (0..5), re-enter loop to restart
+                                        // break;
+
                                         // MI
-                                        // continue;
-                                    } else {
-                                        info!("Proof challenge updated! Checking rewards earned.");
-                                        let balance = (latest_proof.balance as f64)
-                                            / 10f64.powf(ORE_TOKEN_DECIMALS as f64);
-                                        info!("New balance: {}", balance);
-                                        let rewards = latest_proof.balance - old_proof.balance;
-                                        let dec_rewards = (rewards as f64)
-                                            / 10f64.powf(ORE_TOKEN_DECIMALS as f64);
-                                        info!("Earned: {} ORE", dec_rewards);
-
-                                        let submissions =
-                                            { app_epoch_hashes.read().await.submissions.clone() };
-
-                                        let mut total_hashpower: u64 = 0;
-
-                                        for submission in submissions.iter() {
-                                            total_hashpower += submission.1 .1
-                                        }
-
-                                        let _ =
-                                            mine_success_sender.send(MessageInternalMineSuccess {
-                                                difficulty,
-                                                total_balance: balance,
-                                                rewards,
-                                                total_hashpower,
-                                                submissions,
-                                            });
-
-                                        {
-                                            let mut mut_proof = app_proof.lock().await;
-                                            *mut_proof = latest_proof;
-                                        }
-
-                                        // reset nonce
-                                        {
-                                            let mut nonce = app_nonce.lock().await;
-                                            *nonce = 0;
-                                        }
-                                        // reset epoch hashes
-                                        {
-                                            info!("reset epoch hashes");
-                                            let mut mut_epoch_hashes =
-                                                app_epoch_hashes.write().await;
-                                            mut_epoch_hashes.best_hash.solution = None;
-                                            mut_epoch_hashes.best_hash.difficulty = 0;
-                                            mut_epoch_hashes.submissions = HashMap::new();
-                                        }
+                                        // to repace above with next
+                                        warn!("Failed to send after 5 attempts. Re-entering loop and retrying with loading latest proof data.");
+                                        // break for (0..5), re-enter loop to restart
                                         break;
                                     }
                                 }
-                                break;
-                            } else {
-                                // sent error
-                                if i >= 4 {
-                                    warn!("Failed to send after 5 attempts. Discarding and refreshing data.");
-                                    // // MI: from time to time, rpc will rapidly fail 5 attempts, so the next part comment out
-                                    // // will end and fail the whole tx send-and-confirm in very short time.
-                                    // // reset nonce
-                                    // {
-                                    //     let mut nonce = app_nonce.lock().await;
-                                    //     *nonce = 0;
-                                    // }
-                                    // // reset epoch hashes
-                                    // {
-                                    //     info!("reset epoch hashes");
-                                    //     let mut mut_epoch_hashes = app_epoch_hashes.write().await;
-                                    //     mut_epoch_hashes.best_hash.solution = None;
-                                    //     mut_epoch_hashes.best_hash.difficulty = 0;
-                                    //     mut_epoch_hashes.submissions = HashMap::new();
-                                    // }
-
-                                    // // break for (0..5), re-enter loop to restart
-                                    // break;
-
-                                    // MI
-                                    // to repace above with next
-                                    info!("Failed to send after 5 attempts. Re-entering loop and retrying with loading latest proof data.");
-                                    break;
-                                }
                             }
+                            // let sig = rpc_client
+                            //     .send_and_confirm_transaction_with_spinner(&tx)
+                            //     .await;
+                            // if let Ok(sig) = sig {
+                            //     info!("Success!!");
+                            //     info!("Sig: {}", sig);
+                            //     if !*no_sound_notification {
+                            //         utils::play_sound();
+                            //     }
+
+                            //     // update proof
+                            //     // limit number of checking no more than 10
+                            //     let mut num_checking = 0;
+                            //     loop {
+                            //         info!("Waiting for proof hash update");
+                            //         let latest_proof = { app_proof.lock().await.clone() };
+
+                            //         if old_proof.challenge.eq(&latest_proof.challenge) {
+                            //             info!("Proof challenge not updated yet..");
+                            //             old_proof = latest_proof;
+                            //             tokio::time::sleep(Duration::from_millis(1000)).await;
+                            //             num_checking += 1;
+                            //             if num_checking < 10 {
+                            //                 continue;
+                            //             } else {
+                            //                 info!("No proof hash update detected after 10 checkpoints. No more waiting, just keep going...");
+                            //                 break;
+                            //             }
+                            //             // MI
+                            //             // continue;
+                            //         } else {
+                            //             info!("Proof challenge updated! Checking rewards earned.");
+                            //             let balance = (latest_proof.balance as f64)
+                            //                 / 10f64.powf(ORE_TOKEN_DECIMALS as f64);
+                            //             info!("New balance: {}", balance);
+                            //             let rewards = latest_proof.balance - old_proof.balance;
+                            //             let dec_rewards = (rewards as f64)
+                            //                 / 10f64.powf(ORE_TOKEN_DECIMALS as f64);
+                            //             info!("Earned: {} ORE", dec_rewards);
+
+                            //             let submissions =
+                            //                 { app_epoch_hashes.read().await.submissions.clone() };
+
+                            //             let mut total_hashpower: u64 = 0;
+
+                            //             for submission in submissions.iter() {
+                            //                 total_hashpower += submission.1 .1
+                            //             }
+
+                            //             let _ =
+                            //                 mine_success_sender.send(MessageInternalMineSuccess {
+                            //                     difficulty,
+                            //                     total_balance: balance,
+                            //                     rewards,
+                            //                     total_hashpower,
+                            //                     submissions,
+                            //                 });
+
+                            //             {
+                            //                 let mut mut_proof = app_proof.lock().await;
+                            //                 *mut_proof = latest_proof;
+                            //             }
+
+                            //             // reset nonce
+                            //             {
+                            //                 let mut nonce = app_nonce.lock().await;
+                            //                 *nonce = 0;
+                            //             }
+                            //             // reset epoch hashes
+                            //             {
+                            //                 info!("reset epoch hashes");
+                            //                 let mut mut_epoch_hashes =
+                            //                     app_epoch_hashes.write().await;
+                            //                 mut_epoch_hashes.best_hash.solution = None;
+                            //                 mut_epoch_hashes.best_hash.difficulty = 0;
+                            //                 mut_epoch_hashes.submissions = HashMap::new();
+                            //             }
+                            //             break;
+                            //         }
+                            //     }
+                            //     break;
+                            // } else {
+                            //     // sent error
+                            //     if i >= 4 {
+                            //         // warn!("Failed to send after 5 attempts. Discarding and refreshing data.");
+                            //         // // MI: from time to time, rpc will rapidly fail 5 attempts, so the next part comment out
+                            //         // // will end and fail the whole tx send-and-confirm in very short time.
+                            //         // // reset nonce
+                            //         // {
+                            //         //     let mut nonce = app_nonce.lock().await;
+                            //         //     *nonce = 0;
+                            //         // }
+                            //         // // reset epoch hashes
+                            //         // {
+                            //         //     info!("reset epoch hashes");
+                            //         //     let mut mut_epoch_hashes = app_epoch_hashes.write().await;
+                            //         //     mut_epoch_hashes.best_hash.solution = None;
+                            //         //     mut_epoch_hashes.best_hash.difficulty = 0;
+                            //         //     mut_epoch_hashes.submissions = HashMap::new();
+                            //         // }
+
+                            //         // // break for (0..5), re-enter loop to restart
+                            //         // break;
+
+                            //         // MI
+                            //         // to repace above with next
+                            //         warn!("Failed to send after 5 attempts. Re-entering loop and retrying with loading latest proof data.");
+                            //         // break for (0..5), re-enter loop to restart
+                            //         break;
+                            //     }
+                            // }
+                            
                             tokio::time::sleep(Duration::from_millis(1000)).await;
                         } else {
                             error!("Failed to get latest blockhash. retrying...");

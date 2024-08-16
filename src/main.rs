@@ -546,6 +546,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 }
 
                                 // update proof
+                                // limit number of checking no more than 10
+                                let mut num_checking = 0;
                                 loop {
                                     info!("Waiting for proof hash update");
                                     let latest_proof = { app_proof.lock().await.clone() };
@@ -554,7 +556,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         info!("Proof challenge not updated yet..");
                                         old_proof = latest_proof;
                                         tokio::time::sleep(Duration::from_millis(1000)).await;
-                                        continue;
+                                        num_checking += 1;
+                                        if num_checking < 10 {
+                                            continue;
+                                        } else {
+                                            info!("No proof hash update detected after 10 checkpoints. No more waiting, just keep going...");
+                                            break;
+                                        }
+                                        // MI
+                                        // continue;
                                     } else {
                                         info!("Proof challenge updated! Checking rewards earned.");
                                         let balance = (latest_proof.balance as f64)
@@ -610,20 +620,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 // sent error
                                 if i >= 4 {
                                     warn!("Failed to send after 5 attempts. Discarding and refreshing data.");
-                                    // reset nonce
-                                    {
-                                        let mut nonce = app_nonce.lock().await;
-                                        *nonce = 0;
-                                    }
-                                    // reset epoch hashes
-                                    {
-                                        info!("reset epoch hashes");
-                                        let mut mut_epoch_hashes = app_epoch_hashes.write().await;
-                                        mut_epoch_hashes.best_hash.solution = None;
-                                        mut_epoch_hashes.best_hash.difficulty = 0;
-                                        mut_epoch_hashes.submissions = HashMap::new();
-                                    }
-                                    // break for (0..5), re-enter loop to restart
+                                    // // MI: from time to time, rpc will rapidly fail 5 attempts, so the next part comment out
+                                    // // will end and fail the whole tx send-and-confirm in very short time.
+                                    // // reset nonce
+                                    // {
+                                    //     let mut nonce = app_nonce.lock().await;
+                                    //     *nonce = 0;
+                                    // }
+                                    // // reset epoch hashes
+                                    // {
+                                    //     info!("reset epoch hashes");
+                                    //     let mut mut_epoch_hashes = app_epoch_hashes.write().await;
+                                    //     mut_epoch_hashes.best_hash.solution = None;
+                                    //     mut_epoch_hashes.best_hash.difficulty = 0;
+                                    //     mut_epoch_hashes.submissions = HashMap::new();
+                                    // }
+
+                                    // // break for (0..5), re-enter loop to restart
+                                    // break;
+
+                                    // MI
+                                    // to repace above with next
+                                    info!("Failed to send after 5 attempts. Re-entering loop and retrying with loading latest proof data.");
                                     break;
                                 }
                             }

@@ -155,7 +155,7 @@ pub fn get_cutoff(proof: Proof, buffer_time: u64) -> i64 {
 }
 
 // MI
-// #[cached]
+#[cached]
 pub fn play_sound() {
     match rodio::OutputStream::try_default() {
         Ok((_stream, handle)) => {

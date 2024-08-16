@@ -1013,13 +1013,14 @@ async fn proof_tracking_system(ws_url: String, wallet: Arc<Keypair>, proof: Arc<
     loop {
         println!("Establishing rpc websocket connection...");
         let mut ps_client = PubsubClient::new(&ws_url).await;
-        let mut attempts = 0;
+        // let mut attempts = 0;
 
-        while ps_client.is_err() && attempts < 3 {
+        // while ps_client.is_err() && attempts < 3 {
+        while ps_client.is_err() {
             error!("Failed to connect to websocket, retrying...");
             ps_client = PubsubClient::new(&ws_url).await;
-            tokio::time::sleep(Duration::from_millis(1000)).await;
-            attempts += 1;
+            tokio::time::sleep(Duration::from_millis(2000)).await;
+            // attempts += 1;
         }
         info!("RPC WS connection established!");
 

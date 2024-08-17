@@ -549,7 +549,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         min_context_slot: None,
                     };
 
-                    for i in 0..5 {
+                    for i in 0..3 {
                         if let Ok((hash, _slot)) = rpc_client
                             .get_latest_blockhash_with_commitment(rpc_client.commitment())
                             .await
@@ -694,7 +694,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                                     // update proof
                                     // limit number of checking no more than 30 times
-                                    let mut num_checking = 0;
+                                    // let mut num_checking = 0;
                                     loop {
                                         info!("Waiting for proof hash update");
                                         let latest_proof = { app_proof.lock().await.clone() };
@@ -704,34 +704,34 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             old_proof = latest_proof;
                                             tokio::time::sleep(Duration::from_millis(1000)).await;
 
-                                            // Alternative to next unlimited continue...
-                                            num_checking += 1;
-                                            if num_checking < 50 {
-                                                continue;
-                                            } else {
-                                                info!("No proof hash update detected after 50 checkpoints. No more waiting, reset and keep going...");
+                                            // // Alternative to next unlimited continue...
+                                            // num_checking += 1;
+                                            // if num_checking < 30 {
+                                            //     continue;
+                                            // } else {
+                                            //     info!("No proof hash update detected after 30 checkpoints. No more waiting, reset and keep going...");
 
-                                                // reset nonce
-                                                {
-                                                    info!("reset epoch nonce");
-                                                    let mut nonce = app_nonce.lock().await;
-                                                    *nonce = 0;
-                                                }
-                                                // reset epoch hashes
-                                                {
-                                                    info!("reset epoch hashes");
-                                                    let mut mut_epoch_hashes =
-                                                        app_epoch_hashes.write().await;
-                                                    mut_epoch_hashes.best_hash.solution = None;
-                                                    mut_epoch_hashes.best_hash.difficulty = 0;
-                                                    mut_epoch_hashes.submissions = HashMap::new();
-                                                }
+                                            //     // reset nonce
+                                            //     {
+                                            //         info!("reset epoch nonce");
+                                            //         let mut nonce = app_nonce.lock().await;
+                                            //         *nonce = 0;
+                                            //     }
+                                            //     // reset epoch hashes
+                                            //     {
+                                            //         info!("reset epoch hashes");
+                                            //         let mut mut_epoch_hashes =
+                                            //             app_epoch_hashes.write().await;
+                                            //         mut_epoch_hashes.best_hash.solution = None;
+                                            //         mut_epoch_hashes.best_hash.difficulty = 0;
+                                            //         mut_epoch_hashes.submissions = HashMap::new();
+                                            //     }
 
-                                                break;
-                                            }
-                                            
+                                            //     break;
+                                            // }
+
                                             // MI
-                                            // continue;
+                                            continue;
                                         } else {
                                             info!(
                                                 "Proof challenge updated! Checking rewards earned."
@@ -873,8 +873,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         }
                                     }
 
-                                    if i >= 4 {
-                                        warn!("Failed to send after 5 attempts. Discarding and refreshing data.");
+                                    if i >= 2 {
+                                        warn!("Failed to send after 3 attempts. Discarding and refreshing data.");
                                         // MI: from time to time, rpc will rapidly fail 5 attempts, so the next part comment out
                                         // will end and fail the whole tx send-and-confirm in very short time.
                                         // reset nonce

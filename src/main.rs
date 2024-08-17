@@ -33,12 +33,12 @@ use clap::{
 };
 use drillx::Solution;
 use futures::{stream::SplitSink, SinkExt, StreamExt};
-use ore_api::{consts::BUS_COUNT, state::Proof};
+use ore_api::{consts::BUS_COUNT, error::OreError, state::Proof};
 use rand::Rng;
 use serde::Deserialize;
 use solana_account_decoder::UiAccountEncoding;
 use solana_client::{
-    client_error::{ClientError, ClientErrorKind},
+    client_error::ClientErrorKind,
     nonblocking::{pubsub_client::PubsubClient, rpc_client::RpcClient},
     rpc_config::{RpcAccountInfoConfig, RpcSendTransactionConfig},
 };
@@ -51,7 +51,7 @@ use solana_sdk::{
     signer::Signer,
     transaction::Transaction,
 };
-use solana_transaction_status::{TransactionConfirmationStatus, UiTransactionEncoding};
+use solana_transaction_status::UiTransactionEncoding;
 use utils::{
     get_auth_ix, get_cutoff, get_mine_ix, get_proof, get_proof_and_best_bus, get_register_ix,
     proof_pubkey, ORE_TOKEN_DECIMALS,
@@ -75,8 +75,8 @@ const MIN_HASHPOWER: u64 = 5;
 const MIN_DIFF: u32 = 5;
 
 const RPC_RETRIES: usize = 0;
-const CONFIRM_RETRIES: usize = 8;
-const CONFIRM_DELAY: u64 = 500;
+// const CONFIRM_RETRIES: usize = 8;
+// const CONFIRM_DELAY: u64 = 500;
 
 struct AppState {
     sockets: HashMap<SocketAddr, (Pubkey, Arc<Mutex<SplitSink<WebSocket, Message>>>)>,
@@ -756,39 +756,80 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                                 Err(err) => {
                                     match err.kind {
-                                        ClientErrorKind::Custom(ref err_code) => {
-                                            match err_code {
-                                                e if e.contains("custom program error: 0x0") => {
-                                                    error!("Ore: The epoch has ended and needs reset. Retrying...");
-                                                    continue;
-                                                }
-                                                e if e.contains("custom program error: 0x1") => {
-                                                    error!("Ore: The provided hash is invalid. See you next solution.");
-                                                    // reset nonce
-                                                    {
-                                                        let mut nonce = app_nonce.lock().await;
-                                                        *nonce = 0;
+                                        ClientErrorKind::TransactionError(solana_sdk::transaction::TransactionError::InstructionError(_, err)) => {
+                                            match err {
+                                                // Custom instruction error, parse into OreError
+                                                solana_program::instruction::InstructionError::Custom(err_code) => {
+                                                    match err_code {
+                                                        e if e == OreError::NeedsReset as u32 => {
+                                                            error!("Ore: The epoch has ended and needs reset. Retrying...");
+                                                            continue;
+                                                        }
+                                                        e if e == OreError::HashInvalid as u32 => {
+                                                            error!("Ore: The provided hash is invalid. See you next solution.");
+                                                            // reset nonce
+                                                            {
+                                                                let mut nonce = app_nonce.lock().await;
+                                                                *nonce = 0;
+                                                            }
+                                                            // reset epoch hashes
+                                                            {
+                                                                info!("reset epoch hashes");
+                                                                let mut mut_epoch_hashes =
+                                                                    app_epoch_hashes.write().await;
+                                                                mut_epoch_hashes.best_hash.solution = None;
+                                                                mut_epoch_hashes.best_hash.difficulty = 0;
+                                                                mut_epoch_hashes.submissions = HashMap::new();
+                                                            }
+                                                            // break for (0..5), re-enter outer loop to restart
+                                                            break;
+                                                        }
+                                                        _ => {
+                                                            error!("{}", &err.to_string());
+                                                            continue;
+                                                        }
                                                     }
-                                                    // reset epoch hashes
-                                                    {
-                                                        info!("reset epoch hashes");
-                                                        let mut mut_epoch_hashes =
-                                                            app_epoch_hashes.write().await;
-                                                        mut_epoch_hashes.best_hash.solution = None;
-                                                        mut_epoch_hashes.best_hash.difficulty = 0;
-                                                        mut_epoch_hashes.submissions = HashMap::new();
-                                                    }
-                                                    // break for (0..5), re-enter outer loop to restart
-                                                    break;
-                                                }
+                                                },
+
+                                                // Non custom instruction error, return
                                                 _ => {
                                                     error!("{}", &err.to_string());
-                                                    continue;
                                                 }
                                             }
                                         }
 
-                                        // Non custom instruction error, return
+                                        // ClientErrorKind::Custom(ref err_code) => {
+                                        //     match err_code {
+                                        //         e if e.contains("custom program error: 0x0") => {
+                                        //             error!("Ore: The epoch has ended and needs reset. Retrying...");
+                                        //             continue;
+                                        //         }
+                                        //         e if e.contains("custom program error: 0x1") => {
+                                        //             error!("Ore: The provided hash is invalid. See you next solution.");
+                                        //             // reset nonce
+                                        //             {
+                                        //                 let mut nonce = app_nonce.lock().await;
+                                        //                 *nonce = 0;
+                                        //             }
+                                        //             // reset epoch hashes
+                                        //             {
+                                        //                 info!("reset epoch hashes");
+                                        //                 let mut mut_epoch_hashes =
+                                        //                     app_epoch_hashes.write().await;
+                                        //                 mut_epoch_hashes.best_hash.solution = None;
+                                        //                 mut_epoch_hashes.best_hash.difficulty = 0;
+                                        //                 mut_epoch_hashes.submissions = HashMap::new();
+                                        //             }
+                                        //             // break for (0..5), re-enter outer loop to restart
+                                        //             break;
+                                        //         }
+                                        //         _ => {
+                                        //             error!("{}", &err.to_string());
+                                        //             continue;
+                                        //         }
+                                        //     }
+                                        // }
+
                                         _ => {
                                             error!("{}", &err.to_string());
                                         }
@@ -823,100 +864,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     }
                                 }
                             }
-
-                            // // Send transaction
-                            // attempts += 1;
-                            // match rpc_client.send_transaction_with_config(&tx, send_cfg).await {
-                            //     Ok(sig) => {
-                            //         // Confirm transaction
-                            //         'confirm: for _ in 0..CONFIRM_RETRIES {
-                            //             std::thread::sleep(Duration::from_millis(CONFIRM_DELAY));
-                            //             match rpc_client.get_signature_statuses(&[sig]).await {
-                            //                 Ok(signature_statuses) => {
-                            //                     for status in signature_statuses.value {
-                            //                         if let Some(status) = status {
-                            //                             if let Some(err) = status.err {
-                            //                                 match err {
-                            //                     // Instruction error
-                            //                     solana_sdk::transaction::TransactionError::InstructionError(_, err) => {
-                            //                         match err {
-                            //                             // Custom instruction error, parse into OreError
-                            //                             solana_program::instruction::InstructionError::Custom(err_code) => {
-                            //                                 match err_code {
-                            //                                     e if e == OreError::NeedsReset as u32 => {
-                            //                                         attempts = 0;
-                            //                                         error!("Ore needs reset. Retrying...");
-                            //                                         break 'confirm;
-                            //                                     },
-                            //                                     _ => {
-                            //                                         error!("{}", &err.to_string());
-                            //                                         return Err(ClientError {
-                            //                                             request: None,
-                            //                                             kind: ClientErrorKind::Custom(err.to_string()),
-                            //                                         });
-                            //                                     }
-                            //                                 }
-                            //                             },
-
-                            //                             // Non custom instruction error, return
-                            //                             _ => {
-                            //                                 error!("{}", &err.to_string());
-                            //                                 return Err(ClientError {
-                            //                                     request: None,
-                            //                                     kind: ClientErrorKind::Custom(err.to_string()),
-                            //                                 });
-                            //                             }
-                            //                         }
-                            //                     },
-
-                            //                     // Non instruction error, return
-                            //                     _ => {
-                            //                         error!("{}", &err.to_string());
-                            //                         return Err(ClientError {
-                            //                             request: None,
-                            //                             kind: ClientErrorKind::Custom(err.to_string()),
-                            //                         });
-                            //                     }
-                            //                 }
-                            //                             } else if let Some(confirmation) =
-                            //                                 status.confirmation_status
-                            //                             {
-                            //                                 match confirmation {
-                            //                     TransactionConfirmationStatus::Processed => {}
-                            //                     TransactionConfirmationStatus::Confirmed
-                            //                     | TransactionConfirmationStatus::Finalized => {
-                            //                         info!("Success!!");
-                            //                         info!("Sig: {}", sig);
-                            //                         if !*no_sound_notification {
-                            //                             utils::play_sound();
-                            //                         }
-                            //                     }
-                            //                 }
-                            //                             } else {
-                            //                                 // MI
-                            //                                 println!("No confirmation status available for current signature status.");
-                            //                             }
-                            //                         } else {
-                            //                             // MI
-                            //                             println!("No status available yet for current signature.");
-                            //                         }
-                            //                     }
-                            //                 }
-
-                            //                 // Handle confirmation errors
-                            //                 Err(err) => {
-                            //                     error!("{}", &err.kind().to_string());
-                            //                 }
-                            //             }
-                            //         }
-                            //     }
-
-                            //     // Handle submit errors
-                            //     Err(err) => {
-                            //         error!("{}", &err.kind().to_string());
-                            //     }
-                            // }
-
                             tokio::time::sleep(Duration::from_millis(1000)).await;
                         } else {
                             error!("Failed to get latest blockhash. retrying...");

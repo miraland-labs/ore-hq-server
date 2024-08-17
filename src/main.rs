@@ -556,7 +556,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             // if let Ok(sig) = sig {
                             //     info!("Success!!");
                             //     info!("Sig: {}", sig);
-                            //     if !*no_sound_notification {
+                            //     if ! *no_sound_notification.clone() {
                             //         utils::play_sound();
                             //     }
 
@@ -673,7 +673,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 Ok(sig) => {
                                     info!("Success!!");
                                     info!("Sig: {}", sig);
-                                    if !*no_sound_notification {
+                                    if ! *no_sound_notification.clone() {
                                         utils::play_sound();
                                     }
 

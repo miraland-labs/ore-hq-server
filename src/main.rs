@@ -696,10 +696,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             old_proof = latest_proof;
                                             tokio::time::sleep(Duration::from_millis(1000)).await;
                                             num_checking += 1;
-                                            if num_checking < 10 {
+                                            if num_checking < 30 {
                                                 continue;
                                             } else {
-                                                info!("No proof hash update detected after 10 checkpoints. No more waiting, just keep going...");
+                                                info!("No proof hash update detected after 30 checkpoints. No more waiting, just keep going...");
                                                 break;
                                             }
                                             // MI

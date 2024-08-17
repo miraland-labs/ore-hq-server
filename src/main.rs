@@ -329,6 +329,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let app_proof = proof_ext.clone();
     let app_epoch_hashes = epoch_hashes.clone();
     let app_client_nonce_ranges = client_nonce_ranges.clone();
+    let app_min_difficulty = min_difficulty.clone();
     tokio::spawn(async move {
         client_message_handler_system(
             client_message_receiver,
@@ -337,7 +338,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             app_ready_clients,
             app_proof,
             app_client_nonce_ranges,
-            *min_difficulty,
+            *app_min_difficulty,
         )
         .await;
     });
@@ -347,7 +348,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let app_proof = proof_ext.clone();
     let app_nonce = nonce_ext.clone();
     let app_epoch_hashes = epoch_hashes.clone();
-
+    let app_buffer_time = buffer_time.clone();
     let app_client_nonce_ranges = client_nonce_ranges.clone();
 
     tokio::spawn(async move {
@@ -362,7 +363,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             let current_proof = { app_proof.lock().await.clone() };
 
-            let cutoff = get_cutoff(proof, *buffer_time);
+            let cutoff = get_cutoff(proof, *app_buffer_time);
             let mut should_mine = true;
             let cutoff = if cutoff <= 0 {
                 let solution = app_epoch_hashes.read().await.best_hash.solution;
@@ -416,7 +417,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
 
-            tokio::time::sleep(Duration::from_secs(*buffer_time)).await;
+            tokio::time::sleep(Duration::from_secs(*app_buffer_time)).await;
         }
     });
 
@@ -428,6 +429,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let app_epoch_hashes = epoch_hashes.clone();
     let app_wallet = wallet_extension.clone();
     let app_nonce = nonce_ext.clone();
+    let app_dynamic_fee_url = dynamic_fee_url.clone();
+    let app_priority_fee = priority_fee.clone();
+    let app_priority_fee_cap = priority_fee_cap.clone();
+    let app_extra_fee_difficulty = extra_fee_difficulty.clone();
+    let app_extra_fee_percent = extra_fee_percent.clone();
+    let app_no_sound_notification = no_sound_notification.clone();
     let app_rpc_client = rpc_client.clone();
     tokio::spawn(async move {
         let rpc_client = app_rpc_client;
@@ -451,8 +458,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         fee_type = "estimate";
                         match pfee::dynamic_fee(
                             &rpc_client,
-                            (*dynamic_fee_url).clone(),
-                            *priority_fee_cap,
+                            (*app_dynamic_fee_url).clone(),
+                            *app_priority_fee_cap,
                         )
                         .await
                         {
@@ -461,14 +468,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 // MI: calc uplimit of priority fee for precious fee difficulty, eg. diff > 27
                                 {
                                     let solution_difficulty = solution.to_hash().difficulty();
-                                    if solution_difficulty > *extra_fee_difficulty {
-                                        prio_fee = if let Some(ref priority_fee_cap) =
-                                            *priority_fee_cap
+                                    if solution_difficulty > *app_extra_fee_difficulty {
+                                        prio_fee = if let Some(ref app_priority_fee_cap) =
+                                            *app_priority_fee_cap
                                         {
-                                            (*priority_fee_cap).min(
+                                            (*app_priority_fee_cap).min(
                                                 prio_fee
                                                     .saturating_mul(
-                                                        100u64.saturating_add(*extra_fee_percent),
+                                                        100u64.saturating_add(*app_extra_fee_percent),
                                                     )
                                                     .saturating_div(100),
                                             )
@@ -477,7 +484,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             300_000.min(
                                                 prio_fee
                                                     .saturating_mul(
-                                                        100u64.saturating_add(*extra_fee_percent),
+                                                        100u64.saturating_add(*app_extra_fee_percent),
                                                     )
                                                     .saturating_div(100),
                                             )
@@ -487,7 +494,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 prio_fee
                             }
                             Err(err) => {
-                                let fee = priority_fee.unwrap_or(0);
+                                let fee = app_priority_fee.unwrap_or(0);
                                 println!(
                                     "Error: {} Falling back to static value: {} microlamports",
                                     err, fee
@@ -497,7 +504,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                     } else {
                         // static
-                        priority_fee.unwrap_or(0)
+                        app_priority_fee.unwrap_or(0)
                     };
 
                     let prio_fee_ix = ComputeBudgetInstruction::set_compute_unit_price(fee);
@@ -556,7 +563,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             // if let Ok(sig) = sig {
                             //     info!("Success!!");
                             //     info!("Sig: {}", sig);
-                            //     if ! *no_sound_notification.clone() {
+                            //     if ! *app_no_sound_notification {
                             //         utils::play_sound();
                             //     }
 
@@ -673,7 +680,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 Ok(sig) => {
                                     info!("Success!!");
                                     info!("Sig: {}", sig);
-                                    if ! *no_sound_notification.clone() {
+                                    if ! *app_no_sound_notification {
                                         utils::play_sound();
                                     }
 

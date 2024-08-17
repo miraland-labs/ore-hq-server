@@ -439,7 +439,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tokio::spawn(async move {
         let rpc_client = app_rpc_client;
         loop {
-            let mut old_proof = { app_proof.lock().await.clone() };
+            // MI: legacy, any difference?
+            // let mut old_proof = { app_proof.lock().await.clone() };
+            let lock = app_proof.lock().await;
+            let mut old_proof = lock.clone();
+            drop(lock);
 
             let cutoff = get_cutoff(old_proof, 0);
             if cutoff <= 0 {
@@ -475,7 +479,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             (*app_priority_fee_cap).min(
                                                 prio_fee
                                                     .saturating_mul(
-                                                        100u64.saturating_add(*app_extra_fee_percent),
+                                                        100u64
+                                                            .saturating_add(*app_extra_fee_percent),
                                                     )
                                                     .saturating_div(100),
                                             )
@@ -484,7 +489,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             300_000.min(
                                                 prio_fee
                                                     .saturating_mul(
-                                                        100u64.saturating_add(*app_extra_fee_percent),
+                                                        100u64
+                                                            .saturating_add(*app_extra_fee_percent),
                                                     )
                                                     .saturating_div(100),
                                             )
@@ -622,6 +628,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                             //             // reset nonce
                             //             {
+                            //                 info!("reset epoch nonce");
                             //                 let mut nonce = app_nonce.lock().await;
                             //                 *nonce = 0;
                             //             }
@@ -646,6 +653,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             //         // // will end and fail the whole tx send-and-confirm in very short time.
                             //         // // reset nonce
                             //         // {
+                            //         //     info!("reset epoch nonce");
                             //         //     let mut nonce = app_nonce.lock().await;
                             //         //     *nonce = 0;
                             //         // }
@@ -680,12 +688,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 Ok(sig) => {
                                     info!("Success!!");
                                     info!("Sig: {}", sig);
-                                    if ! *app_no_sound_notification {
+                                    if !*app_no_sound_notification {
                                         utils::play_sound();
                                     }
 
                                     // update proof
-                                    // limit number of checking no more than 10
+                                    // limit number of checking no more than 30 times
                                     let mut num_checking = 0;
                                     loop {
                                         info!("Waiting for proof hash update");
@@ -695,13 +703,33 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             info!("Proof challenge not updated yet..");
                                             old_proof = latest_proof;
                                             tokio::time::sleep(Duration::from_millis(1000)).await;
+
+                                            // Alternative to next unlimited continue...
                                             num_checking += 1;
-                                            if num_checking < 30 {
+                                            if num_checking < 50 {
                                                 continue;
                                             } else {
-                                                info!("No proof hash update detected after 30 checkpoints. No more waiting, just keep going...");
+                                                info!("No proof hash update detected after 50 checkpoints. No more waiting, reset and keep going...");
+
+                                                // reset nonce
+                                                {
+                                                    info!("reset epoch nonce");
+                                                    let mut nonce = app_nonce.lock().await;
+                                                    *nonce = 0;
+                                                }
+                                                // reset epoch hashes
+                                                {
+                                                    info!("reset epoch hashes");
+                                                    let mut mut_epoch_hashes =
+                                                        app_epoch_hashes.write().await;
+                                                    mut_epoch_hashes.best_hash.solution = None;
+                                                    mut_epoch_hashes.best_hash.difficulty = 0;
+                                                    mut_epoch_hashes.submissions = HashMap::new();
+                                                }
+
                                                 break;
                                             }
+                                            
                                             // MI
                                             // continue;
                                         } else {
@@ -743,6 +771,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                                             // reset nonce
                                             {
+                                                info!("reset epoch nonce");
                                                 let mut nonce = app_nonce.lock().await;
                                                 *nonce = 0;
                                             }
@@ -776,6 +805,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                             error!("Ore: The provided hash is invalid. See you next solution.");
                                                             // reset nonce
                                                             {
+                                                                info!("reset epoch nonce");
                                                                 let mut nonce = app_nonce.lock().await;
                                                                 *nonce = 0;
                                                             }
@@ -815,6 +845,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         //             error!("Ore: The provided hash is invalid. See you next solution.");
                                         //             // reset nonce
                                         //             {
+                                        //                 info!("reset epoch nonce");
                                         //                 let mut nonce = app_nonce.lock().await;
                                         //                 *nonce = 0;
                                         //             }
@@ -848,13 +879,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         // will end and fail the whole tx send-and-confirm in very short time.
                                         // reset nonce
                                         {
+                                            info!("reset epoch nonce");
                                             let mut nonce = app_nonce.lock().await;
                                             *nonce = 0;
                                         }
                                         // reset epoch hashes
                                         {
                                             info!("reset epoch hashes");
-                                            let mut mut_epoch_hashes = app_epoch_hashes.write().await;
+                                            let mut mut_epoch_hashes =
+                                                app_epoch_hashes.write().await;
                                             mut_epoch_hashes.best_hash.solution = None;
                                             mut_epoch_hashes.best_hash.difficulty = 0;
                                             mut_epoch_hashes.submissions = HashMap::new();
@@ -1266,7 +1299,7 @@ async fn proof_tracking_system(ws_url: String, wallet: Arc<Keypair>, proof: Arc<
             tokio::time::sleep(Duration::from_millis(2000)).await;
             // attempts += 1;
         }
-        info!("RPC WS connection established!");
+        info!("RPC ws connection established!");
 
         let app_wallet = wallet.clone();
         if let Ok(ps_client) = ps_client {
@@ -1274,6 +1307,7 @@ async fn proof_tracking_system(ws_url: String, wallet: Arc<Keypair>, proof: Arc<
             let ps_client = Arc::new(ps_client);
             let app_proof = proof.clone();
             let account_pubkey = proof_pubkey(app_wallet.pubkey());
+            let ps_client = Arc::clone(&ps_client); // MI
             let pubsub = ps_client
                 .account_subscribe(
                     &account_pubkey,
@@ -1288,14 +1322,31 @@ async fn proof_tracking_system(ws_url: String, wallet: Arc<Keypair>, proof: Arc<
 
             info!("Subscribed tracking pool proof updates with websocket");
             if let Ok((mut account_sub_notifications, _account_unsub)) = pubsub {
-                while let Some(response) = account_sub_notifications.next().await {
-                    let data = response.value.data.decode();
-                    if let Some(data_bytes) = data {
-                        if let Ok(new_proof) = Proof::try_from_bytes(&data_bytes) {
-                            {
-                                let mut app_proof = app_proof.lock().await;
-                                *app_proof = *new_proof;
-                                drop(app_proof);
+                // MI: vanilla, since by design while let will exit when None received
+                // while let Some(response) = account_sub_notifications.next().await {
+                //     let data = response.value.data.decode();
+                //     if let Some(data_bytes) = data {
+                //         if let Ok(new_proof) = Proof::try_from_bytes(&data_bytes) {
+                //             {
+                //                 let mut app_proof = app_proof.lock().await;
+                //                 *app_proof = *new_proof;
+                //                 drop(app_proof);
+                //             }
+                //         }
+                //     }
+                // }
+
+                // MI: use loop, since by design while let will exit when None received
+                loop {
+                    if let Some(response) = account_sub_notifications.next().await {
+                        let data = response.value.data.decode();
+                        if let Some(data_bytes) = data {
+                            if let Ok(new_proof) = Proof::try_from_bytes(&data_bytes) {
+                                {
+                                    let mut app_proof = app_proof.lock().await;
+                                    *app_proof = *new_proof;
+                                    drop(app_proof);
+                                }
                             }
                         }
                     }

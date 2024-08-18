@@ -62,7 +62,7 @@ use tokio::sync::{
     Mutex, RwLock,
 };
 use tower_http::trace::{DefaultMakeSpan, TraceLayer};
-use tracing::{error, info};
+use tracing::{error, info, warn};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 mod dynamic_fee;
@@ -711,7 +711,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                                     mut_epoch_hashes.best_hash.difficulty = 0;
                                                                     mut_epoch_hashes.submissions = HashMap::new();
                                                                 }
-                                                                // break for (0..5), re-enter outer loop to restart
+                                                                // break for (0..10), re-enter outer loop to restart
                                                                 break;
                                                             }
                                                             _ => {
@@ -764,7 +764,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                     tokio::time::sleep(Duration::from_millis(500)).await;
                 } else {
-                    error!("No best solution yet.");
+                    warn!("No best solution yet.");
                     tokio::time::sleep(Duration::from_millis(1_000)).await;
                 }
             } else {
@@ -1216,34 +1216,34 @@ async fn proof_tracking_system(ws_url: String, wallet: Arc<Keypair>, proof: Arc<
             info!("Subscribed tracking pool proof updates with websocket");
             if let Ok((mut account_sub_notifications, _account_unsub)) = pubsub {
                 // MI: vanilla, since by design while let will exit when None received
-                // while let Some(response) = account_sub_notifications.next().await {
-                //     let data = response.value.data.decode();
-                //     if let Some(data_bytes) = data {
-                //         if let Ok(new_proof) = Proof::try_from_bytes(&data_bytes) {
-                //             {
-                //                 let mut app_proof = app_proof.lock().await;
-                //                 *app_proof = *new_proof;
-                //                 drop(app_proof);
-                //             }
-                //         }
-                //     }
-                // }
-
-                // MI: use loop, since by design while let will exit when None received
-                loop {
-                    if let Some(response) = account_sub_notifications.next().await {
-                        let data = response.value.data.decode();
-                        if let Some(data_bytes) = data {
-                            if let Ok(new_proof) = Proof::try_from_bytes(&data_bytes) {
-                                {
-                                    let mut app_proof = app_proof.lock().await;
-                                    *app_proof = *new_proof;
-                                    drop(app_proof);
-                                }
+                while let Some(response) = account_sub_notifications.next().await {
+                    let data = response.value.data.decode();
+                    if let Some(data_bytes) = data {
+                        if let Ok(new_proof) = Proof::try_from_bytes(&data_bytes) {
+                            {
+                                let mut app_proof = app_proof.lock().await;
+                                *app_proof = *new_proof;
+                                drop(app_proof);
                             }
                         }
                     }
                 }
+
+                // // MI: use loop, since by design while let will exit when None received
+                // loop {
+                //     if let Some(response) = account_sub_notifications.next().await {
+                //         let data = response.value.data.decode();
+                //         if let Some(data_bytes) = data {
+                //             if let Ok(new_proof) = Proof::try_from_bytes(&data_bytes) {
+                //                 {
+                //                     let mut app_proof = app_proof.lock().await;
+                //                     *app_proof = *new_proof;
+                //                     drop(app_proof);
+                //                 }
+                //             }
+                //         }
+                //     }
+                // }
             }
         }
     }

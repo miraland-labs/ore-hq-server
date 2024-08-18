@@ -63,7 +63,7 @@ use tokio::sync::{
 };
 use tower_http::trace::{DefaultMakeSpan, TraceLayer};
 use tracing::{error, info, warn};
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+// use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 mod dynamic_fee;
 mod utils;
@@ -467,7 +467,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let reader = app_epoch_hashes.read().await;
                 let solution = reader.best_hash.solution.clone();
                 drop(reader);
+                // MI
+                let mut solution_is_none_counter = 0;
                 if solution.is_some() {
+                    solution_is_none_counter = 0;
                     let signer = app_wallet.clone();
 
                     let mut bus = rand::thread_rng().gen_range(0..BUS_COUNT);
@@ -708,6 +711,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                                     mut_epoch_hashes.best_hash.difficulty = 0;
                                                                     mut_epoch_hashes.submissions = HashMap::new();
                                                                 }
+                                                                
                                                                 // break for (0..10), re-enter outer loop to restart
                                                                 break;
                                                             }
@@ -744,7 +748,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                     }
                     if !success {
-                        info!("Failed to send after 10 attempts. Discarding and refreshing data.");
+                        info!("Failed to send after 10 attempts or early return due to inner instruction error. Discarding and refreshing data.");
                         // reset nonce
                         {
                             let mut nonce = app_nonce.lock().await;
@@ -761,7 +765,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                     tokio::time::sleep(Duration::from_millis(500)).await;
                 } else {
-                    warn!("No best solution yet.");
+                    solution_is_none_counter += 1;
+                    if solution_is_none_counter % 5 == 0 {
+                        warn!("No best solution yet.");
+                    }
                     tokio::time::sleep(Duration::from_millis(1_000)).await;
                 }
             } else {

@@ -445,6 +445,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let app_epoch_hashes = epoch_hashes.clone();
     let app_wallet = wallet_extension.clone();
     let app_nonce = nonce_ext.clone();
+    let app_dynamic_fee = dynamic_fee.clone();
     let app_dynamic_fee_url = dynamic_fee_url.clone();
     let app_priority_fee = priority_fee.clone();
     let app_priority_fee_cap = priority_fee_cap.clone();
@@ -504,12 +505,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             ixs.push(cu_limit_ix);
 
                             let mut fee_type: &str = "static";
-                            let fee: u64 = if *dynamic_fee {
+                            let fee: u64 = if *app_dynamic_fee {
                                 fee_type = "estimate";
                                 match pfee::dynamic_fee(
                                     &rpc_client,
-                                    (*dynamic_fee_url).clone(),
-                                    *priority_fee_cap,
+                                    (*app_dynamic_fee_url).clone(),
+                                    *app_priority_fee_cap,
                                 )
                                 .await
                                 {
@@ -519,28 +520,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         {
                                             let solution_difficulty =
                                                 solution.to_hash().difficulty();
-                                            if solution_difficulty > *extra_fee_difficulty {
-                                                prio_fee = if let Some(ref priority_fee_cap) =
-                                                    *priority_fee_cap
+                                            if solution_difficulty > *app_extra_fee_difficulty {
+                                                prio_fee = if let Some(ref app_priority_fee_cap) =
+                                                    *app_priority_fee_cap
                                                 {
-                                                    (*priority_fee_cap).min(
+                                                    (*app_priority_fee_cap).min(
                                                         prio_fee
-                                                            .saturating_mul(
-                                                                100u64.saturating_add(
-                                                                    *extra_fee_percent,
-                                                                ),
-                                                            )
+                                                            .saturating_mul(100u64.saturating_add(
+                                                                *app_extra_fee_percent,
+                                                            ))
                                                             .saturating_div(100),
                                                     )
                                                 } else {
                                                     // No priority_fee set as cap, not exceed 300K
                                                     300_000.min(
                                                         prio_fee
-                                                            .saturating_mul(
-                                                                100u64.saturating_add(
-                                                                    *extra_fee_percent,
-                                                                ),
-                                                            )
+                                                            .saturating_mul(100u64.saturating_add(
+                                                                *app_extra_fee_percent,
+                                                            ))
                                                             .saturating_div(100),
                                                     )
                                                 }
@@ -549,8 +546,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         prio_fee
                                     }
                                     Err(err) => {
-                                        let fee = priority_fee.unwrap_or(0);
-                                        println!(
+                                        let fee = app_priority_fee.unwrap_or(0);
+                                        info!(
                                             "Error: {} Falling back to static value: {} microlamports",
                                             err, fee
                                         );
@@ -559,7 +556,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 }
                             } else {
                                 // static
-                                priority_fee.unwrap_or(0)
+                                app_priority_fee.unwrap_or(0)
                             };
 
                             let prio_fee_ix = ComputeBudgetInstruction::set_compute_unit_price(fee);
@@ -1063,14 +1060,14 @@ fn process_message(
 ) -> ControlFlow<(), ()> {
     match msg {
         Message::Text(_t) => {
-            // println!(">>> {who} sent str: {t:?}");
+            // info!(">>> {who} sent str: {t:?}");
         }
         Message::Binary(d) => {
             // first 8 bytes are message type
             let message_type = d[0];
             match message_type {
                 0 => {
-                    // // println!("Got Ready message");
+                    // // info!("Got Ready message");
                     // let mut b_index = 1;
 
                     // let mut pubkey = [0u8; 32];
@@ -1169,10 +1166,10 @@ fn process_message(
             return ControlFlow::Break(());
         }
         Message::Pong(_v) => {
-            //println!(">>> {who} sent pong with {v:?}");
+            //info!(">>> {who} sent pong with {v:?}");
         }
         Message::Ping(_v) => {
-            //println!(">>> {who} sent ping with {v:?}");
+            //info!(">>> {who} sent ping with {v:?}");
         }
     }
 

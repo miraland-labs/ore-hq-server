@@ -4,6 +4,7 @@ use serde_json::{json, Value};
 
 use solana_sdk::pubkey::Pubkey;
 use std::{collections::HashMap, str::FromStr};
+use tracing::warn;
 
 use solana_client::{nonblocking::rpc_client::RpcClient, rpc_response::RpcPrioritizationFee};
 
@@ -114,13 +115,15 @@ pub async fn dynamic_fee(
         // split json from send
         // 1) handle response
         let Ok(resp) = client.post(rpc_url).json(&body).send().await else {
-            eprintln!("didn't get dynamic fee estimate, use default instead.");
+            // eprintln!("didn't get dynamic fee estimate, use default instead.");
+            warn!("didn't get dynamic fee estimate, use default instead.");
             return Ok(DEFAULT_PRIORITY_FEE);
         };
 
         // 2) handle json
         let Ok(response) = resp.json::<Value>().await else {
-            eprintln!("didn't get json data from fee estimate response, use default instead.");
+            // eprintln!("didn't get json data from fee estimate response, use default instead.");
+            warn!("didn't get json data from fee estimate response, use default instead.");
             return Ok(DEFAULT_PRIORITY_FEE);
         };
 

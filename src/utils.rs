@@ -7,8 +7,8 @@ use std::{
 use drillx::Solution;
 use ore_api::{
     consts::{
-        BUS_ADDRESSES, BUS_COUNT, CONFIG_ADDRESS, MINT_ADDRESS, PROOF, TREASURY_ADDRESS,
-        TOKEN_DECIMALS,
+        BUS_ADDRESSES, BUS_COUNT, CONFIG_ADDRESS, MINT_ADDRESS, PROOF, TOKEN_DECIMALS,
+        TREASURY_ADDRESS,
     },
     instruction,
     state::{Bus, Config, Proof},
@@ -16,9 +16,7 @@ use ore_api::{
 pub use ore_utils::AccountDeserialize;
 use rand::Rng;
 use solana_client::nonblocking::rpc_client::RpcClient;
-use solana_sdk::{
-    instruction::Instruction, pubkey::Pubkey,
-};
+use solana_sdk::{instruction::Instruction, pubkey::Pubkey};
 use spl_associated_token_account::get_associated_token_address;
 
 pub const ORE_TOKEN_DECIMALS: u8 = TOKEN_DECIMALS;
@@ -87,7 +85,6 @@ pub async fn get_proof_and_best_bus(
                         top_bus_balance = bus.rewards;
                         top_bus_id = bus.id as usize;
                         top_bus = BUS_ADDRESSES[top_bus_id];
-
                     }
                 } else {
                     return Err(());
@@ -140,7 +137,6 @@ pub async fn get_proof(client: &RpcClient, authority: Pubkey) -> Result<Proof, S
         Err(_) => return Err("Failed to get proof account".to_string()),
     }
 }
-
 
 pub fn get_cutoff(proof: Proof, buffer_time: u64) -> i64 {
     let now = SystemTime::now()

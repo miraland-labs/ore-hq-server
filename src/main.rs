@@ -361,6 +361,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Handle ready clients
     let rpc_client = Arc::new(rpc_client); // MI
     let app_rpc_client = rpc_client.clone(); // MI
+    let app_ready_clients = ready_clients.clone(); // MI
     let app_shared_state = shared_state.clone();
     let app_proof = proof_ext.clone();
     let app_epoch_hashes = epoch_hashes.clone();
@@ -369,6 +370,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let app_client_nonce_ranges = client_nonce_ranges.clone();
     tokio::spawn(async move {
         let rpc_client = app_rpc_client; // MI
+        let ready_clients = app_ready_clients.clone(); // MI
         loop {
             let mut clients = Vec::new();
             {

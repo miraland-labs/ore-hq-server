@@ -350,6 +350,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     // Handle ready clients
+    let rpc_client = Arc::new(rpc_client); // MI
+    let app_rpc_client = rpc_client.clone(); // MI
     let app_shared_state = shared_state.clone();
     let app_proof = proof_ext.clone();
     let app_nonce = nonce_ext.clone();
@@ -357,6 +359,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let app_buffer_time = buffer_time.clone();
     let app_client_nonce_ranges = client_nonce_ranges.clone();
     tokio::spawn(async move {
+        let rpc_client = app_rpc_client; // MI
         loop {
             let mut clients = Vec::new();
             {
@@ -371,7 +374,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let proof = lock.clone();
             drop(lock);
 
-            let cutoff = get_cutoff(proof, *app_buffer_time);
+            // let cutoff = get_cutoff(proof, *app_buffer_time); // MI
+            let cutoff = get_cutoff(&rpc_client, proof, *app_buffer_time).await;
             let mut should_mine = true;
             let cutoff = if cutoff <= 0 {
                 let solution = app_epoch_hashes.read().await.best_hash.solution;
@@ -440,7 +444,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (all_clients_sender, mut all_clients_receiver) =
         tokio::sync::mpsc::unbounded_channel::<MessageInternalAllClients>();
 
-    let rpc_client = Arc::new(rpc_client);
+    // let rpc_client = Arc::new(rpc_client); // delcared in previous
+    let app_rpc_client = rpc_client.clone();
     let app_proof = proof_ext.clone();
     let app_epoch_hashes = epoch_hashes.clone();
     let app_wallet = wallet_extension.clone();
@@ -452,25 +457,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let app_extra_fee_difficulty = extra_fee_difficulty.clone();
     let app_extra_fee_percent = extra_fee_percent.clone();
     let app_no_sound_notification = no_sound_notification.clone();
-    let app_rpc_client = rpc_client.clone();
     let app_all_clients_sender = all_clients_sender.clone();
     tokio::spawn(async move {
         let rpc_client = app_rpc_client;
+        // MI
+        let mut solution_is_none_counter = 0;
         loop {
             let lock = app_proof.lock().await;
             let mut old_proof = lock.clone();
             drop(lock);
 
-            let cutoff = get_cutoff(old_proof, 0);
+            // MI: vanilla
+            // let cutoff = get_cutoff(old_proof, 0);
+            let cutoff = get_cutoff(&rpc_client, old_proof, 0).await;
             if cutoff <= 0 {
                 // process solutions
                 let reader = app_epoch_hashes.read().await;
                 let solution = reader.best_hash.solution.clone();
                 drop(reader);
-                // MI
-                let mut solution_is_none_counter = 0;
                 if solution.is_some() {
-                    solution_is_none_counter = 0;
                     let signer = app_wallet.clone();
 
                     let mut bus = rand::thread_rng().gen_range(0..BUS_COUNT);
@@ -772,6 +777,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     tokio::time::sleep(Duration::from_millis(1_000)).await;
                 }
             } else {
+                // reset none solution counter
+                solution_is_none_counter = 0;
                 tokio::time::sleep(Duration::from_secs(cutoff as u64)).await;
             };
         }

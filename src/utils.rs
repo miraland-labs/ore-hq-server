@@ -1,7 +1,7 @@
 use cached::proc_macro::cached;
 use std::{
     io::Cursor,
-    time::{SystemTime, UNIX_EPOCH},
+    // time::{SystemTime, UNIX_EPOCH},
 };
 
 use drillx::Solution;
@@ -16,7 +16,7 @@ use ore_api::{
 pub use ore_utils::AccountDeserialize;
 use rand::Rng;
 use solana_client::nonblocking::rpc_client::RpcClient;
-use solana_sdk::{instruction::Instruction, pubkey::Pubkey};
+use solana_sdk::{clock::Clock, instruction::Instruction, pubkey::Pubkey, sysvar};
 use spl_associated_token_account::get_associated_token_address;
 
 pub const ORE_TOKEN_DECIMALS: u8 = TOKEN_DECIMALS;
@@ -138,16 +138,52 @@ pub async fn get_proof(client: &RpcClient, authority: Pubkey) -> Result<Proof, S
     }
 }
 
-pub fn get_cutoff(proof: Proof, buffer_time: u64) -> i64 {
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("Failed to get time")
-        .as_secs() as i64;
+pub async fn get_clock(client: &RpcClient) -> Clock {
+    // MI: vanilla
+    // let data = client
+    //     .get_account_data(&sysvar::clock::ID)
+    //     .await
+    //     .expect("Failed to get clock account");
+
+    let data: Vec<u8>;
+    loop {
+        match client.get_account_data(&sysvar::clock::ID).await {
+            Ok(d) => {
+                data = d;
+                break;
+            }
+            Err(e) => {
+                println!("get clock account error: {:?}", e);
+                println!("retry to get clock account...");
+            }
+        }
+    }
+
+    bincode::deserialize::<Clock>(&data).expect("Failed to deserialize clock")
+}
+
+// // MI: vanilla, use local time
+// pub fn get_cutoff(proof: Proof, buffer_time: u64) -> i64 {
+//     let now = SystemTime::now()
+//         .duration_since(UNIX_EPOCH)
+//         .expect("Failed to get time")
+//         .as_secs() as i64;
+//     proof
+//         .last_hash_at
+//         .saturating_add(60)
+//         .saturating_sub(buffer_time as i64)
+//         .saturating_sub(now)
+// }
+
+// MI: use on-chain clock time
+pub async fn get_cutoff(rpc_client: &RpcClient, proof: Proof, buffer_time: u64) -> u64 {
+    let clock = get_clock(rpc_client).await;
     proof
         .last_hash_at
         .saturating_add(60)
         .saturating_sub(buffer_time as i64)
-        .saturating_sub(now)
+        .saturating_sub(clock.unix_timestamp)
+        .max(0) as u64
 }
 
 // MI

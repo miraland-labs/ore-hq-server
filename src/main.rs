@@ -78,8 +78,15 @@ const RPC_RETRIES: usize = 0;
 // const CONFIRM_RETRIES: usize = 8;
 // const CONFIRM_DELAY: u64 = 500;
 
+
+#[derive(Clone)]
+struct ClientConnection {
+    pubkey: Pubkey,
+    socket: Arc<Mutex<SplitSink<WebSocket, Message>>>,
+}
+
 struct AppState {
-    sockets: HashMap<SocketAddr, (Pubkey, Arc<Mutex<SplitSink<WebSocket, Message>>>)>,
+    sockets: HashMap<SocketAddr, ClientConnection>,
 }
 
 pub struct MessageInternalAllClients {
@@ -212,7 +219,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     //     .with(tracing_subscriber::fmt::layer())
     //     .init();
 
-    let file_appender = tracing_appender::rolling::hourly("./logs", "ore-hq-server.log");
+    let file_appender = tracing_appender::rolling::daily("./logs", "ore-hq-server.log");
     let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
     tracing_subscriber::fmt().with_writer(non_blocking).init();
 
@@ -337,8 +344,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let app_epoch_hashes = epoch_hashes.clone();
     let app_client_nonce_ranges = client_nonce_ranges.clone();
     let app_min_difficulty = min_difficulty.clone();
+    let app_state = shared_state.clone();
     tokio::spawn(async move {
         client_message_handler_system(
+            app_state,
             client_message_receiver,
             app_epoch_hashes,
             app_ready_clients,
@@ -354,9 +363,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let app_rpc_client = rpc_client.clone(); // MI
     let app_shared_state = shared_state.clone();
     let app_proof = proof_ext.clone();
-    let app_nonce = nonce_ext.clone();
     let app_epoch_hashes = epoch_hashes.clone();
     let app_buffer_time = buffer_time.clone();
+    let app_nonce = nonce_ext.clone();
     let app_client_nonce_ranges = client_nonce_ranges.clone();
     tokio::spawn(async move {
         let rpc_client = app_rpc_client; // MI
@@ -419,7 +428,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let ready_clients = ready_clients.clone();
                         tokio::spawn(async move {
                             let _ = sender
-                                .1
+                                .socket
                                 .lock()
                                 .await
                                 .send(Message::Binary(bin_data.to_vec()))
@@ -428,7 +437,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             let _ = app_client_nonce_ranges
                                 .write()
                                 .await
-                                .insert(sender.0, nonce_range);
+                                .insert(sender.pubkey, nonce_range);
                         });
                     }
                 }
@@ -481,18 +490,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let mut bus = rand::thread_rng().gen_range(0..BUS_COUNT);
 
                     let mut success = false;
+                    let reader = app_epoch_hashes.read().await;
+                    let best_solution = reader.best_hash.solution.clone();
+                    // let submissions = reader.submissions.clone();
+                    drop(reader);
                     for i in 0..10 {
-                        let reader = app_epoch_hashes.read().await;
-                        let solution = reader.best_hash.solution.clone();
-                        drop(reader);
-                        if let Some(solution) = solution {
-                            let difficulty = solution.to_hash().difficulty();
+                        if let Some(best_solution) = best_solution {
+                            let difficulty = best_solution.to_hash().difficulty();
 
                             info!(
                                 "Starting mine submission attempt {} with difficulty {}.",
                                 i, difficulty
                             );
-                            info!("Getting latest proof and busses data.");
+                            info!("Getting latest _proof and busses data.");
                             if let Ok((_l_proof, (best_bus_id, _best_bus))) =
                                 get_proof_and_best_bus(&rpc_client, signer.pubkey()).await
                             {
@@ -526,9 +536,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         let mut prio_fee = fee;
                                         // MI: calc uplimit of priority fee for precious fee difficulty, eg. diff > 27
                                         {
-                                            let solution_difficulty =
-                                                solution.to_hash().difficulty();
-                                            if solution_difficulty > *app_extra_fee_difficulty {
+                                            let best_solution_difficulty =
+                                                best_solution.to_hash().difficulty();
+                                            if best_solution_difficulty > *app_extra_fee_difficulty {
                                                 prio_fee = if let Some(ref app_priority_fee_cap) =
                                                     *app_priority_fee_cap
                                                 {
@@ -573,7 +583,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             let noop_ix = get_auth_ix(signer.pubkey());
                             ixs.push(noop_ix);
 
-                            let ix_mine = get_mine_ix(signer.pubkey(), solution, bus);
+                            let ix_mine = get_mine_ix(signer.pubkey(), best_solution, bus);
                             ixs.push(ix_mine);
 
                             let send_cfg = RpcSendTransactionConfig {
@@ -796,7 +806,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let shared_state = app_shared_state.read().await;
                     let len = shared_state.sockets.len();
                     for (_socket_addr, socket_sender) in shared_state.sockets.iter() {
-                        let pubkey = socket_sender.0;
+                        let pubkey = socket_sender.pubkey;
 
                         if let Some((supplied_diff, pubkey_hashpower)) =
                             msg.submissions.get(&pubkey)
@@ -824,19 +834,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                             let earned_rewards_dec = (earned_rewards as f64).div(decimals);
 
+                            let percentage = if pool_rewards_dec != 0.0 {
+                                (earned_rewards_dec / pool_rewards_dec) * 100.0
+                            } else {
+                                0.0 // Handle the case where pool_rewards_dec is 0 to avoid division by zero
+                            };
+                            
                             let message = format!(
-                                "Submitted Difficulty: {}\nPool Earned: {} ORE.\nPool Balance: {}\nMiner Earned: {} ORE for difficulty: {}\nActive Miners: {}",
+                                "Pool Submitted Difficulty: {}\nPool Earned:  {:.11} ORE\nPool Balance: {:.11}\n----------------------\nActive Miners: {}\n----------------------\nMiner Submitted Difficulty: {}\nMiner Earned: {:.11} ORE\n{:.2}% of total pool reward",
                                 msg.difficulty,
                                 pool_rewards_dec,
                                 msg.total_balance,
-                                earned_rewards_dec,
+                                len,
                                 supplied_diff,
-                                len
+                                earned_rewards_dec,
+                                percentage
                             );
+
                             let socket_sender = socket_sender.clone();
                             tokio::spawn(async move {
                                 if let Ok(_) = socket_sender
-                                    .1
+                                    .socket
                                     .lock()
                                     .await
                                     .send(Message::Text(message))
@@ -872,7 +890,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let text = msg.text.clone();
                         let socket = socket_sender.clone();
                         tokio::spawn(async move {
-                            if let Ok(_) = socket.1.lock().await.send(Message::Text(text)).await {
+                            if let Ok(_) = socket.socket.lock().await.send(Message::Text(text)).await {
                             } else {
                                 error!("Failed to send client text");
                             }
@@ -977,8 +995,8 @@ async fn ws_handler(
     if let Ok(user_pubkey) = Pubkey::from_str(pubkey) {
         {
             let mut already_connected = false;
-            for (_, (socket_pubkey, _)) in app_state.read().await.sockets.iter() {
-                if user_pubkey == *socket_pubkey {
+            for (_, client_connection) in app_state.read().await.sockets.iter() {
+                if user_pubkey == client_connection.pubkey {
                     already_connected = true;
                     break;
                 }
@@ -1035,9 +1053,11 @@ async fn handle_socket(
         info!("Socket addr: {who} already has an active connection");
         return;
     } else {
-        app_state
-            .sockets
-            .insert(who, (who_pubkey, Arc::new(Mutex::new(sender))));
+        let new_client_connection = ClientConnection {
+            pubkey: who_pubkey,
+            socket: Arc::new(Mutex::new(sender)),
+        };
+        app_state.sockets.insert(who, new_client_connection);
     }
     drop(app_state);
 
@@ -1231,10 +1251,11 @@ async fn proof_tracking_system(ws_url: String, wallet: Arc<Keypair>, proof: Arc<
                     let data = response.value.data.decode();
                     if let Some(data_bytes) = data {
                         if let Ok(new_proof) = Proof::try_from_bytes(&data_bytes) {
+                            info!("Got new proof data");
                             {
                                 let mut app_proof = app_proof.lock().await;
                                 *app_proof = *new_proof;
-                                drop(app_proof);
+                                // drop(app_proof);
                             }
                         }
                     }
@@ -1261,6 +1282,7 @@ async fn proof_tracking_system(ws_url: String, wallet: Arc<Keypair>, proof: Arc<
 }
 
 async fn client_message_handler_system(
+    app_state: Arc<RwLock<AppState>>,
     mut receiver_channel: UnboundedReceiver<ClientMessage>,
     epoch_hashes: Arc<RwLock<EpochHashes>>,
     ready_clients: Arc<Mutex<HashSet<SocketAddr>>>,
@@ -1281,10 +1303,11 @@ async fn client_message_handler_system(
             ClientMessage::Mining(addr) => {
                 info!("Client {} has started mining!", addr.to_string());
             }
-            ClientMessage::BestSolution(_addr, solution, pubkey) => {
+            ClientMessage::BestSolution(addr, solution, pubkey) => {
                 let app_epoch_hashes = epoch_hashes.clone();
                 let app_proof = proof.clone();
                 let app_client_nonce_ranges = client_nonce_ranges.clone();
+                let app_state = app_state.clone();
                 tokio::spawn(async move {
                     let epoch_hashes = app_epoch_hashes;
                     let proof = app_proof;
@@ -1295,14 +1318,16 @@ async fn client_message_handler_system(
                     let challenge = lock.challenge;
                     drop(lock);
 
+                    let reader = client_nonce_ranges.read().await;
                     let nonce_range: Range<u64> = {
-                        if let Some(nr) = client_nonce_ranges.read().await.get(&pubkey) {
+                        if let Some(nr) = reader.get(&pubkey) {
                             nr.clone()
                         } else {
                             error!("Client nonce range not set!");
                             return;
                         }
                     };
+                    drop(reader);
 
                     let nonce = u64::from_le_bytes(solution.n);
 
@@ -1311,14 +1336,23 @@ async fn client_message_handler_system(
                         return;
                     }
 
+                    let reader = app_state.read().await;
+                    if reader.sockets.get(&addr).is_none() {
+                        error!("Failed to get client socket for addr: {}", addr);
+                        return;
+                    }
+                    drop(reader);
+
                     if solution.is_valid(&challenge) {
                         let diff = solution.to_hash().difficulty();
                         info!("{} found diff: {}", pubkey_str, diff);
                         // if diff >= MIN_DIFF {
                         if diff >= min_difficulty {
                             // calculate rewards
-                            let hashpower = MIN_HASHPOWER * 2u64.pow(diff - MIN_DIFF);
-
+                            let mut hashpower = MIN_HASHPOWER * 2u64.pow(diff - MIN_DIFF);
+                            if hashpower > 327_680 {
+                                hashpower = 327_680;
+                            }
                             {
                                 let mut epoch_hashes = epoch_hashes.write().await;
                                 epoch_hashes.submissions.insert(pubkey, (diff, hashpower));
@@ -1326,6 +1360,7 @@ async fn client_message_handler_system(
                                     epoch_hashes.best_hash.difficulty = diff;
                                     epoch_hashes.best_hash.solution = Some(solution);
                                 }
+                                drop(epoch_hashes);
                             }
                         } else {
                             error!("Diff too low, skipping");
@@ -1334,7 +1369,16 @@ async fn client_message_handler_system(
                         error!(
                             "{} returned a solution which is invalid for the latest challenge!",
                             pubkey
-                        )
+                        );
+
+                        let reader = app_state.read().await;
+                        if let Some(app_client_socket) = reader.sockets.get(&addr) {
+                            let _ = app_client_socket.socket.lock().await.send(Message::Text("Invalid solution. If this keeps happening, please contact support.".to_string())).await;
+                        } else {
+                            error!("Failed to get client socket for addr: {}", addr);
+                            return;
+                        }
+                        drop(reader);
                     }
                 });
             }
@@ -1353,7 +1397,7 @@ async fn ping_check_system(shared_state: &Arc<RwLock<AppState>>) {
             let socket = socket.clone();
             handles.push(tokio::spawn(async move {
                 if socket
-                    .1
+                    .socket
                     .lock()
                     .await
                     .send(Message::Ping(vec![1, 2, 3]))

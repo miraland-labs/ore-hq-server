@@ -503,10 +503,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 i, difficulty
                             );
                             info!("Getting latest _proof and busses data.");
-                            if let Ok((_l_proof, (best_bus_id, _best_bus))) =
+                            if let Ok((_loaded_proof, (best_bus_id, _best_bus))) =
                                 get_proof_and_best_bus(&rpc_client, signer.pubkey()).await
                             {
                                 bus = best_bus_id;
+
+                                // // MI
+                                // info!("Sync latest proof data");
+                                // {
+                                //     let mut lock = app_proof.lock().await;
+                                //     // let mut update_app_proof = lock.clone();
+                                //     // update_app_proof = _loaded_proof;
+                                //     *lock = loaded_proof;
+                                //     drop(lock);
+                                // }
+
                             }
                             let _now = SystemTime::now()
                                 .duration_since(UNIX_EPOCH)
@@ -776,6 +787,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             mut_epoch_hashes.best_hash.solution = None;
                             mut_epoch_hashes.best_hash.difficulty = 0;
                             mut_epoch_hashes.submissions = HashMap::new();
+                        }
+                    }
+                    // MI
+                    // whether tx success or failure, we still want to sync latest proof data
+                    if let Ok(loaded_proof) = get_proof(&rpc_client, signer.pubkey()).await {
+                        info!("Sync to make sure miners seeing latest proof data");
+                        {
+                            let mut lock = app_proof.lock().await;
+                            *lock = loaded_proof;
+                            drop(lock);
                         }
                     }
                     tokio::time::sleep(Duration::from_millis(500)).await;

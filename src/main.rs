@@ -35,6 +35,7 @@ use drillx::Solution;
 use futures::{stream::SplitSink, SinkExt, StreamExt};
 use ore_api::{consts::BUS_COUNT, error::OreError, state::Proof};
 use rand::Rng;
+use slack_messaging::Message as SlackChannelMessage;
 use serde::Deserialize;
 use solana_account_decoder::UiAccountEncoding;
 use solana_client::{
@@ -106,6 +107,12 @@ pub enum ClientMessage {
     Ready(SocketAddr),
     Mining(SocketAddr),
     BestSolution(SocketAddr, Solution, Pubkey),
+}
+
+#[derive(Debug)]
+pub enum SlackMessage {
+    // Rewards(/* difficulty: */ u32, /* rewards: */ f64, /* balance: */ f64),
+    Rewards(u32, f64, f64),
 }
 
 pub struct EpochHashes {
@@ -193,6 +200,15 @@ struct Args {
     )]
     pub extra_fee_percent: u64,
 
+    #[arg(
+        long,
+        short,
+        value_name = "SLACK_DIFFICULTY",
+        help = "The min difficulty that will notify slack channel upon transaction success.",
+        default_value = "20"
+    )]
+    pub slack_difficulty: u32,
+
     /// Mine with sound notification on/off
     #[arg(
         long,
@@ -228,6 +244,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let rpc_url = std::env::var("RPC_URL").expect("RPC_URL must be set.");
     let rpc_ws_url = std::env::var("RPC_WS_URL").expect("RPC_WS_URL must be set.");
 
+    let slack_webhook = std::env::var("SLACK_WEBHOOK").expect("SLACK_WEBHOOK must be set.");
+
     // let virtual_database: Arc<DashMap<Pubkey, Submission>> = DashMap::new().into();
 
     let priority_fee = Arc::new(args.priority_fee);
@@ -241,6 +259,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let dynamic_fee = Arc::new(args.dynamic_fee);
     let dynamic_fee_url = Arc::new(args.dynamic_fee_url);
+
+    let slack_difficulty = Arc::new(args.slack_difficulty);
 
     let no_sound_notification = Arc::new(args.no_sound_notification);
 
@@ -358,6 +378,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await;
     });
 
+    // MI
+    let (slack_message_sender, slack_message_receiver) =
+        tokio::sync::mpsc::unbounded_channel::<SlackMessage>();
+
+    // Handle slack messages to send
+    tokio::spawn(async move {
+        slack_messaging_system(
+            slack_webhook,
+            slack_message_receiver,
+        )
+        .await;
+    });
+
     // Handle ready clients
     let rpc_client = Arc::new(rpc_client); // MI
     let app_rpc_client = rpc_client.clone(); // MI
@@ -469,8 +502,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let app_extra_fee_percent = extra_fee_percent.clone();
     let app_no_sound_notification = no_sound_notification.clone();
     let app_all_clients_sender = all_clients_sender.clone();
+    let app_slack_message_sender = slack_message_sender.clone();
+    let app_slack_difficulty = slack_difficulty.clone();
     tokio::spawn(async move {
         let rpc_client = app_rpc_client;
+        let slack_message_sender = app_slack_message_sender;
+        let slack_difficulty = app_slack_difficulty;
         // MI
         let mut solution_is_none_counter = 0;
         loop {
@@ -705,6 +742,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                     mut_epoch_hashes.best_hash.difficulty = 0;
                                                     mut_epoch_hashes.submissions = HashMap::new();
                                                 }
+
+                                                // last one, notify slack channel if necessary
+                                                if difficulty.ge(&*slack_difficulty) {
+                                                    let _ = slack_message_sender.send(
+                                                        SlackMessage::Rewards(difficulty, dec_rewards, balance)
+                                                    );
+                                                }
+
                                                 break;
                                             }
                                         }
@@ -899,6 +944,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 } else {
                     error!("Failed to load balance");
                 }
+
+                // send slack message if diff >= slack diff
+                // slack_messaging(diff, pool_earned, pool_balance); // no need wait success
             }
         }
     });
@@ -1373,8 +1421,11 @@ async fn client_message_handler_system(
                         if diff >= min_difficulty {
                             // calculate rewards, only diff larger than min_difficulty(rather than MIN_DIFF) qualifies rewards calc.
                             let mut hashpower = MIN_HASHPOWER * 2u64.pow(diff - MIN_DIFF);
-                            if hashpower > 327_680 {
-                                hashpower = 327_680;
+                            // if hashpower > 327_680 {
+                            //     hashpower = 327_680;
+                            // }
+                            if hashpower > 81_920 {
+                                hashpower = 81_920;
                             }
                             {
                                 let mut epoch_hashes = epoch_hashes.write().await;
@@ -1450,6 +1501,36 @@ async fn ping_check_system(shared_state: &Arc<RwLock<AppState>>) {
         }
 
         tokio::time::sleep(Duration::from_secs(30)).await;
+    }
+}
+
+// MI
+async fn slack_messaging_system(
+    slack_webhook: String,
+    mut receiver_channel: UnboundedReceiver<SlackMessage>,
+) {
+    loop {
+        while let Some(slack_message) = receiver_channel.recv().await {
+            match slack_message {
+            SlackMessage::Rewards(d, r, b) => slack_messaging(slack_webhook.clone(), d, r, b).await,
+            }
+        }
+    }
+}
+
+// MI
+async fn slack_messaging(slack_webhook: String, difficulty: u32, rewards: f64, balance: f64) {
+    let text = format!("D: {}\nR: {}\nB: {}", difficulty, rewards, balance);
+    let slack_webhook_url = url::Url::parse(&slack_webhook).expect("Failed to parse slack webhook url");
+    let message = SlackChannelMessage::builder()
+        .text(text)
+        .build();
+    let req = reqwest::Client::new()
+        .post(slack_webhook_url)
+        .json(&message);
+    if let Err(err) = req.send().await {
+        // eprintln!("{}", err);
+        error!("{}", err);
     }
 }
 

@@ -3195,6 +3195,7 @@ dependencies = [
  "rodio",
  "serde",
  "serde_json",
+ "slack-messaging",
  "solana-account-decoder",
  "solana-client",
  "solana-program",
@@ -4258,6 +4259,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8f92a496fb766b417c996b9c5e57daf2f7ad3b0bebe1ccfca4856390e3d3bb67"
 dependencies = [
  "autocfg",
+]
+
+[[package]]
+name = "slack-messaging"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4098da1e1d85ee489084ed43aa0de35d188b59469db1435018a3e7ebae3706b4"
+dependencies = [
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

@@ -793,14 +793,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                     // MI
                     // whether tx success or failure, we still want to sync latest proof data
-                    if let Ok(loaded_proof) = get_proof(&rpc_client, signer.pubkey()).await {
-                        info!("Sync to make sure miners seeing latest proof data");
-                        {
-                            let mut lock = app_proof.lock().await;
-                            *lock = loaded_proof;
-                            drop(lock);
-                        }
-                    }
+                    // if let Ok(loaded_proof) = get_proof(&rpc_client, signer.pubkey()).await {
+                    //     info!("Sync to make sure miners seeing latest proof data");
+                    //     {
+                    //         let mut lock = app_proof.lock().await;
+                    //         *lock = loaded_proof;
+                    //         drop(lock);
+                    //     }
+                    // }
                     tokio::time::sleep(Duration::from_millis(500)).await;
                 } else {
                     solution_is_none_counter += 1;
@@ -1371,7 +1371,7 @@ async fn client_message_handler_system(
                         info!("{} found diff: {}", pubkey_str, diff);
                         // if diff >= MIN_DIFF {
                         if diff >= min_difficulty {
-                            // calculate rewards
+                            // calculate rewards, only diff larger than min_difficulty(rather than MIN_DIFF) qualifies rewards calc.
                             let mut hashpower = MIN_HASHPOWER * 2u64.pow(diff - MIN_DIFF);
                             if hashpower > 327_680 {
                                 hashpower = 327_680;

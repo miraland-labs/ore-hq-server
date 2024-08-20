@@ -724,21 +724,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                             }
                                                             e if e == OreError::HashInvalid as u32 => {
                                                                 error!("Ore: The provided hash is invalid. See you next solution.");
-                                                                // reset nonce
-                                                                {
-                                                                    info!("reset epoch nonce");
-                                                                    let mut nonce = app_nonce.lock().await;
-                                                                    *nonce = 0;
-                                                                }
-                                                                // reset epoch hashes
-                                                                {
-                                                                    info!("reset epoch hashes");
-                                                                    let mut mut_epoch_hashes =
-                                                                    app_epoch_hashes.write().await;
-                                                                    mut_epoch_hashes.best_hash.solution = None;
-                                                                    mut_epoch_hashes.best_hash.difficulty = 0;
-                                                                    mut_epoch_hashes.submissions = HashMap::new();
-                                                                }
+                                                                // // reset nonce
+                                                                // {
+                                                                //     info!("reset epoch nonce");
+                                                                //     let mut nonce = app_nonce.lock().await;
+                                                                //     *nonce = 0;
+                                                                // }
+                                                                // // reset epoch hashes
+                                                                // {
+                                                                //     info!("reset epoch hashes");
+                                                                //     let mut mut_epoch_hashes =
+                                                                //     app_epoch_hashes.write().await;
+                                                                //     mut_epoch_hashes.best_hash.solution = None;
+                                                                //     mut_epoch_hashes.best_hash.difficulty = 0;
+                                                                //     mut_epoch_hashes.submissions = HashMap::new();
+                                                                // }
                                                                 
                                                                 // break for (0..10), re-enter outer loop to restart
                                                                 break;

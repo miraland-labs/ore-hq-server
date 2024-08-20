@@ -389,12 +389,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let cutoff = get_cutoff(&rpc_client, proof, *app_buffer_time).await;
             let mut should_mine = true;
             let cutoff = if cutoff <= 0 {
-                // MI, vanilla
-                // let solution = app_epoch_hashes.read().await.best_hash.solution;
-                // if solution.is_some() {
-                //     should_mine = false;
-                // }
-                should_mine = false; // MI
+                let solution = app_epoch_hashes.read().await.best_hash.solution;
+                if solution.is_some() {
+                    should_mine = false;
+                }
                 0
             } else {
                 cutoff

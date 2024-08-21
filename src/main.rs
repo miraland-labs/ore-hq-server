@@ -539,7 +539,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                             info!(
                                 "Starting mine submission attempt {} with difficulty {}.",
-                                i, difficulty
+                                i + 1, difficulty
                             );
                             info!("Getting latest _proof and busses data.");
                             if let Ok((_loaded_proof, (best_bus_id, _best_bus))) =
@@ -1437,7 +1437,7 @@ async fn client_message_handler_system(
                                 drop(epoch_hashes);
                             }
                         } else {
-                            error!("Diff too low, skipping");
+                            warn!("Diff too low, skipping");
                         }
                     } else {
                         error!(

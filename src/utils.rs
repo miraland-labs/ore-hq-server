@@ -18,6 +18,7 @@ use rand::Rng;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{clock::Clock, instruction::Instruction, pubkey::Pubkey, sysvar};
 use spl_associated_token_account::get_associated_token_address;
+use tracing::{error, info};
 
 pub const ORE_TOKEN_DECIMALS: u8 = TOKEN_DECIMALS;
 
@@ -153,8 +154,8 @@ pub async fn get_clock(client: &RpcClient) -> Clock {
                 break;
             }
             Err(e) => {
-                println!("get clock account error: {:?}", e);
-                println!("retry to get clock account...");
+                error!("get clock account error: {:?}", e);
+                info!("retry to get clock account...");
             }
         }
     }

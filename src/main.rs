@@ -17,7 +17,7 @@ use axum::{
         ws::{Message, WebSocket},
         ConnectInfo, Query, State, WebSocketUpgrade,
     },
-    http::{Response, StatusCode},
+    http::{Method, Response, StatusCode},
     response::IntoResponse,
     routing::get,
     Extension, Router,
@@ -58,11 +58,17 @@ use utils::{
     proof_pubkey, ORE_TOKEN_DECIMALS,
 };
 // use spl_associated_token_account::get_associated_token_address;
-use tokio::sync::{
-    mpsc::{UnboundedReceiver, UnboundedSender},
-    Mutex, RwLock,
+use tokio::{
+    sync::{
+        mpsc::{UnboundedReceiver, UnboundedSender},
+        Mutex, RwLock,
+    },
+    time::Instant,
 };
-use tower_http::trace::{DefaultMakeSpan, TraceLayer};
+use tower_http::{
+    cors::CorsLayer,
+    trace::{DefaultMakeSpan, TraceLayer},
+};
 use tracing::{error, info, warn};
 // use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -102,10 +108,15 @@ pub struct MessageInternalMineSuccess {
     submissions: HashMap<Pubkey, (u32, u64)>,
 }
 
+pub struct LastPong {
+    pongs: HashMap<SocketAddr, Instant>,
+}
+
 #[derive(Debug)]
 pub enum ClientMessage {
     Ready(SocketAddr),
     Mining(SocketAddr),
+    Pong(SocketAddr),
     BestSolution(SocketAddr, Solution, Pubkey),
 }
 
@@ -358,6 +369,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }));
     let ready_clients = Arc::new(Mutex::new(HashSet::new()));
 
+    let pongs = Arc::new(RwLock::new(LastPong {
+        pongs: HashMap::new(),
+    }));
+
+    // Track client pong timings
+    let app_pongs = pongs.clone();
+    let app_state = shared_state.clone();
+    tokio::spawn(async move {
+        pong_tracking_system(app_pongs, app_state).await;
+    });
+
     let app_wallet = wallet_extension.clone();
     let app_proof = proof_ext.clone();
     // Establish webocket connection for tracking pool proof changes.
@@ -375,6 +397,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let app_client_nonce_ranges = client_nonce_ranges.clone();
     let app_min_difficulty = min_difficulty.clone();
     let app_state = shared_state.clone();
+    let app_pongs = pongs.clone();
     tokio::spawn(async move {
         client_message_handler_system(
             app_state,
@@ -383,6 +406,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             app_ready_clients,
             app_proof,
             app_client_nonce_ranges,
+            app_pongs,
             *app_min_difficulty,
         )
         .await;
@@ -455,7 +479,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let mut nonce = app_nonce.lock().await;
                         let start = *nonce;
                         // max hashes possible in 60s for a single client
-                        *nonce += 2_000_000;
+                        *nonce += 4_000_000;
                         let end = *nonce;
                         start..end
                     };
@@ -995,6 +1019,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
+    let cors = CorsLayer::new()
+        .allow_methods([Method::GET])
+        .allow_origin(tower_http::cors::Any);
+
     let client_channel = client_message_sender.clone();
     let app_shared_state = shared_state.clone();
     let app = Router::new()
@@ -1010,7 +1038,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .layer(
             TraceLayer::new_for_http()
                 .make_span_with(DefaultMakeSpan::default().include_headers(true)),
-        );
+        )
+        .layer(cors);
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
 
@@ -1294,7 +1323,8 @@ fn process_message(
             return ControlFlow::Break(());
         }
         Message::Pong(_v) => {
-            //info!(">>> {who} sent pong with {v:?}");
+            let msg = ClientMessage::Pong(who);
+            let _ = client_channel.send(msg);
         }
         Message::Ping(_v) => {
             //info!(">>> {who} sent ping with {v:?}");
@@ -1375,6 +1405,28 @@ async fn proof_tracking_system(ws_url: String, wallet: Arc<Keypair>, proof: Arc<
     }
 }
 
+async fn pong_tracking_system(app_pongs: Arc<RwLock<LastPong>>, app_state: Arc<RwLock<AppState>>) {
+    loop {
+        let reader = app_pongs.read().await;
+        let pongs = reader.pongs.clone();
+        drop(reader);
+
+        for pong in pongs.iter() {
+            if pong.1.elapsed().as_secs() > 45 {
+                let mut writer = app_state.write().await;
+                writer.sockets.remove(pong.0);
+                drop(writer);
+
+                let mut writer = app_pongs.write().await;
+                writer.pongs.remove(pong.0);
+                drop(writer)
+            }
+        }
+
+        tokio::time::sleep(Duration::from_secs(15)).await;
+    }
+}
+
 async fn client_message_handler_system(
     app_state: Arc<RwLock<AppState>>,
     mut receiver_channel: UnboundedReceiver<ClientMessage>,
@@ -1382,10 +1434,16 @@ async fn client_message_handler_system(
     ready_clients: Arc<Mutex<HashSet<SocketAddr>>>,
     proof: Arc<Mutex<Proof>>,
     client_nonce_ranges: Arc<RwLock<HashMap<Pubkey, Range<u64>>>>,
+    app_pongs: Arc<RwLock<LastPong>>,
     min_difficulty: u32,
 ) {
     while let Some(client_message) = receiver_channel.recv().await {
         match client_message {
+            ClientMessage::Pong(addr) => {
+                let mut writer = app_pongs.write().await;
+                writer.pongs.insert(addr, Instant::now());
+                drop(writer);
+            }
             ClientMessage::Ready(addr) => {
                 let ready_clients = ready_clients.clone();
                 tokio::spawn(async move {

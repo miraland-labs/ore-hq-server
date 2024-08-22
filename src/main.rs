@@ -54,7 +54,7 @@ use solana_sdk::{
 };
 use solana_transaction_status::UiTransactionEncoding;
 use utils::{
-    get_auth_ix, get_cutoff, get_mine_ix, get_proof, get_proof_and_best_bus, get_register_ix,
+    get_auth_ix, get_cutoff, get_cutoff_with_risk, get_mine_ix, get_proof, get_proof_and_best_bus, get_register_ix,
     proof_pubkey, ORE_TOKEN_DECIMALS,
 };
 // use spl_associated_token_account::get_associated_token_address;
@@ -430,7 +430,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             drop(lock);
 
             // let cutoff = get_cutoff(proof, *app_buffer_time); // MI
-            let cutoff = get_cutoff(&rpc_client, proof, *app_buffer_time).await;
+            // let cutoff = get_cutoff(&rpc_client, proof, *app_buffer_time).await;
+            let cutoff = if (*app_risk_time).gt(&0) {
+                get_cutoff_with_risk(&rpc_client, proof, *app_buffer_time, *app_risk_time).await
+            } else {
+                get_cutoff(&rpc_client, proof, *app_buffer_time).await
+            };
             let mut should_mine = true;
             let cutoff = if cutoff <= 0 {
                 let solution = app_epoch_hashes.read().await.best_hash.solution;
@@ -439,9 +444,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 0
             } else {
-                // MI, vanilla
-                // cutoff
-                cutoff + *app_risk_time
+                cutoff
             };
 
             if should_mine {
@@ -517,6 +520,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let app_all_clients_sender = all_clients_sender.clone();
     let app_slack_message_sender = slack_message_sender.clone();
     let app_slack_difficulty = slack_difficulty.clone();
+    // let app_buffer_time = buffer_time.clone();
+    let app_risk_time = risk_time.clone();
     tokio::spawn(async move {
         let rpc_client = app_rpc_client;
         let slack_message_sender = app_slack_message_sender;
@@ -530,7 +535,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             // MI: vanilla
             // let cutoff = get_cutoff(old_proof, 0);
-            let cutoff = get_cutoff(&rpc_client, old_proof, 0).await;
+            // let cutoff = get_cutoff(&rpc_client, old_proof, 0).await;
+            let cutoff = if (*app_risk_time).gt(&0) {
+                get_cutoff_with_risk(&rpc_client, proof, 0, *app_risk_time).await
+            } else {
+                get_cutoff(&rpc_client, proof, 0).await
+            };
             if cutoff <= 0 {
                 // process solutions
                 let reader = app_epoch_hashes.read().await;
@@ -870,10 +880,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             } else {
                 // reset none solution counter
                 solution_is_none_counter = 0;
-                // MI, vanilla
-                // tokio::time::sleep(Duration::from_secs(cutoff as u64)).await;
-                // delay 5 sec for client submission handler system
-                tokio::time::sleep(Duration::from_secs(cutoff + 5 as u64)).await;
+                tokio::time::sleep(Duration::from_secs(cutoff as u64)).await;
             };
         }
     });

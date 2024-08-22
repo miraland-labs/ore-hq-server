@@ -872,8 +872,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 solution_is_none_counter = 0;
                 // MI, vanilla
                 // tokio::time::sleep(Duration::from_secs(cutoff as u64)).await;
-                // delay 2 sec for client submission handler system
-                tokio::time::sleep(Duration::from_secs(cutoff + 2 as u64)).await;
+                // delay 5 sec for client submission handler system
+                tokio::time::sleep(Duration::from_secs(cutoff + 5 as u64)).await;
             };
         }
     });

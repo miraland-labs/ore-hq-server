@@ -146,6 +146,15 @@ struct Args {
 
     #[arg(
         long,
+        short,
+        value_name = "RISK_SECONDS",
+        help = "Set extra hash time in seconds for miners to stop mining and start submitting, risking a penalty.",
+        default_value = "0"
+    )]
+    pub risk_time: u64,
+
+    #[arg(
+        long,
         value_name = "FEE_MICROLAMPORTS",
         help = "Price to pay for compute units when dynamic fee flag is off, or dynamic fee is unavailable.",
         default_value = "20000",
@@ -252,6 +261,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let priority_fee_cap = Arc::new(args.priority_fee_cap);
 
     let buffer_time = Arc::new(args.buffer_time);
+    let risk_time = Arc::new(args.risk_time);
 
     let min_difficulty = Arc::new(args.expected_min_difficulty);
     let extra_fee_difficulty = Arc::new(args.extra_fee_difficulty);
@@ -399,6 +409,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let app_proof = proof_ext.clone();
     let app_epoch_hashes = epoch_hashes.clone();
     let app_buffer_time = buffer_time.clone();
+    let app_risk_time = risk_time.clone();
     let app_nonce = nonce_ext.clone();
     let app_client_nonce_ranges = client_nonce_ranges.clone();
     tokio::spawn(async move {
@@ -428,7 +439,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 0
             } else {
-                cutoff
+                // MI, vanilla
+                // cutoff
+                cutoff + *app_risk_time
             };
 
             if should_mine {

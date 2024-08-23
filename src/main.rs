@@ -891,7 +891,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             } else {
                 // reset none solution counter
                 solution_is_none_counter = 0;
-                tokio::time::sleep(Duration::from_secs(cutoff as u64)).await;
+                // tokio::time::sleep(Duration::from_secs(cutoff as u64)).await;
+                tokio::time::sleep(Duration::from_secs(
+                    0.max(cutoff - *app_buffer_time as i64) as u64
+                ))
+                .await;
             };
         }
     });

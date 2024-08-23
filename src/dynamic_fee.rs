@@ -180,9 +180,11 @@ pub async fn dynamic_fee(
         Err(err) => Err(err),
         Ok(fee) => {
             if let Some(max_fee) = priority_fee_cap {
-                Ok((fee + 5000).min(max_fee)) // add extra 5000 microlamports as buffer
+                // Ok((fee + 5000).min(max_fee)) // add extra 5000 microlamports as buffer
+                Ok((fee).min(max_fee))
             } else {
-                Ok(fee + 5000)
+                // Ok(fee + 5000)
+                Ok(fee)
             }
         }
     }

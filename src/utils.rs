@@ -176,15 +176,38 @@ pub async fn get_clock(client: &RpcClient) -> Clock {
 //         .saturating_sub(now)
 // }
 
+// // MI: use on-chain clock time without risk time version
+// pub async fn get_cutoff(rpc_client: &RpcClient, proof: Proof, buffer_time: u64) -> u64 {
+//     let clock = get_clock(rpc_client).await;
+//     proof
+//         .last_hash_at
+//         .saturating_add(60)
+//         .saturating_sub(buffer_time as i64)
+//         .saturating_sub(clock.unix_timestamp)
+//         .max(0) as u64
+// }
+
+// // MI: use on-chain clock time with risk time(default 0) version
+// pub async fn get_cutoff_with_risk(
+//     rpc_client: &RpcClient,
+//     proof: Proof,
+//     buffer_time: u64,
+//     risk_time: u64,
+// ) -> u64 {
+//     let clock = get_clock(rpc_client).await;
+//     proof
+//         .last_hash_at
+//         .saturating_add(60)
+//         .saturating_add(risk_time as i64)
+//         .saturating_sub(buffer_time as i64)
+//         .saturating_sub(clock.unix_timestamp)
+//         .max(0) as u64
+// }
+
 // MI: use on-chain clock time without risk time version
-pub async fn get_cutoff(rpc_client: &RpcClient, proof: Proof, buffer_time: u64) -> u64 {
+pub async fn get_cutoff(rpc_client: &RpcClient, proof: Proof, buffer_time: u64) -> i64 {
     let clock = get_clock(rpc_client).await;
-    proof
-        .last_hash_at
-        .saturating_add(60)
-        .saturating_sub(buffer_time as i64)
-        .saturating_sub(clock.unix_timestamp)
-        .max(0) as u64
+    proof.last_hash_at + 60 as i64 - buffer_time as i64 - clock.unix_timestamp
 }
 
 // MI: use on-chain clock time with risk time(default 0) version
@@ -193,15 +216,9 @@ pub async fn get_cutoff_with_risk(
     proof: Proof,
     buffer_time: u64,
     risk_time: u64,
-) -> u64 {
+) -> i64 {
     let clock = get_clock(rpc_client).await;
-    proof
-        .last_hash_at
-        .saturating_add(60)
-        .saturating_add(risk_time as i64)
-        .saturating_sub(buffer_time as i64)
-        .saturating_sub(clock.unix_timestamp)
-        .max(0) as u64
+    proof.last_hash_at + 60 as i64 + risk_time as i64 - buffer_time as i64 - clock.unix_timestamp
 }
 
 // MI

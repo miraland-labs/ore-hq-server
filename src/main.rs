@@ -473,6 +473,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             if should_mine {
                 let challenge = proof.challenge;
+                // MI
+                let cutoff = cutoff - 2;
 
                 for client in clients {
                     let nonce_range = {

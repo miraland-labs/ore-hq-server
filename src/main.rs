@@ -556,10 +556,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             // MI: vanilla
             // let cutoff = get_cutoff(old_proof, 0);
             // let cutoff = get_cutoff(&rpc_client, old_proof, 0).await;
+
+            // let cutoff = if (*app_risk_time).gt(&0) {
+            //     get_cutoff_with_risk(&rpc_client, proof, 0, *app_risk_time).await
+            // } else {
+            //     get_cutoff(&rpc_client, proof, 0).await
+            // };
+
             let cutoff = if (*app_risk_time).gt(&0) {
-                get_cutoff_with_risk(&rpc_client, proof, 0, *app_risk_time).await
+                get_cutoff_with_risk(&rpc_client, proof, *app_buffer_time, *app_risk_time).await
             } else {
-                get_cutoff(&rpc_client, proof, 0).await
+                get_cutoff(&rpc_client, proof, *app_buffer_time).await
             };
             if cutoff <= 0 {
                 if cutoff <= -(*app_buffer_time as i64) {

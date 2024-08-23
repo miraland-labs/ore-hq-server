@@ -544,7 +544,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let app_all_clients_sender = all_clients_sender.clone();
     let app_slack_message_sender = slack_message_sender.clone();
     let app_slack_difficulty = slack_difficulty.clone();
-    // let app_buffer_time = buffer_time.clone();
+    let app_buffer_time = buffer_time.clone();
     let app_risk_time = risk_time.clone();
     tokio::spawn(async move {
         let rpc_client = app_rpc_client;
@@ -904,7 +904,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             } else {
                 // reset none solution counter
                 solution_is_none_counter = 0;
-                tokio::time::sleep(Duration::from_secs(cutoff as u64)).await;
+                // tokio::time::sleep(Duration::from_secs(cutoff as u64)).await;
+                tokio::time::sleep(Duration::from_secs((cutoff - *app_buffer_time).max(0) as u64)).await;
             };
         }
     });
@@ -1517,7 +1518,7 @@ async fn client_message_handler_system(
                                 }
                                 drop(epoch_hashes);
                             }
-                            tokio::time::sleep(Duration::from_millis(100)).await;
+                            tokio::time::sleep(Duration::from_millis(0)).await;
                         } else {
                             warn!("Diff too low, skipping");
                         }

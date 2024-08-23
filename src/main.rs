@@ -35,8 +35,8 @@ use drillx::Solution;
 use futures::{stream::SplitSink, SinkExt, StreamExt};
 use ore_api::{consts::BUS_COUNT, error::OreError, state::Proof};
 use rand::Rng;
-use slack_messaging::Message as SlackChannelMessage;
 use serde::Deserialize;
+use slack_messaging::Message as SlackChannelMessage;
 use solana_account_decoder::UiAccountEncoding;
 use solana_client::{
     client_error::ClientErrorKind,
@@ -54,8 +54,8 @@ use solana_sdk::{
 };
 use solana_transaction_status::UiTransactionEncoding;
 use utils::{
-    get_auth_ix, get_cutoff, get_cutoff_with_risk, get_mine_ix, get_proof, get_proof_and_best_bus, get_register_ix,
-    proof_pubkey, ORE_TOKEN_DECIMALS,
+    get_auth_ix, get_cutoff, get_cutoff_with_risk, get_mine_ix, get_proof, get_proof_and_best_bus,
+    get_register_ix, proof_pubkey, ORE_TOKEN_DECIMALS,
 };
 // use spl_associated_token_account::get_associated_token_address;
 use tokio::{
@@ -84,7 +84,6 @@ const MIN_DIFF: u32 = 5;
 const RPC_RETRIES: usize = 0;
 // const CONFIRM_RETRIES: usize = 8;
 // const CONFIRM_DELAY: u64 = 500;
-
 
 #[derive(Clone)]
 struct ClientConnection {
@@ -418,11 +417,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Handle slack messages to send
     tokio::spawn(async move {
-        slack_messaging_system(
-            slack_webhook,
-            slack_message_receiver,
-        )
-        .await;
+        slack_messaging_system(slack_webhook, slack_message_receiver).await;
     });
 
     // Handle ready clients
@@ -586,7 +581,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                             info!(
                                 "Starting mine submission attempt {} with difficulty {}.",
-                                i + 1, difficulty
+                                i + 1,
+                                difficulty
                             );
                             info!("Getting latest _proof and busses data.");
                             if let Ok((_loaded_proof, (best_bus_id, _best_bus))) =
@@ -603,7 +599,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 //     *lock = loaded_proof;
                                 //     drop(lock);
                                 // }
-
                             }
                             let _now = SystemTime::now()
                                 .duration_since(UNIX_EPOCH)
@@ -635,7 +630,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         {
                                             let best_solution_difficulty =
                                                 best_solution.to_hash().difficulty();
-                                            if best_solution_difficulty > *app_extra_fee_difficulty {
+                                            if best_solution_difficulty > *app_extra_fee_difficulty
+                                            {
                                                 prio_fee = if let Some(ref app_priority_fee_cap) =
                                                     *app_priority_fee_cap
                                                 {
@@ -793,7 +789,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                 // last one, notify slack channel if necessary
                                                 if difficulty.ge(&*slack_difficulty) {
                                                     let _ = slack_message_sender.send(
-                                                        SlackMessage::Rewards(difficulty, dec_rewards, balance)
+                                                        SlackMessage::Rewards(
+                                                            difficulty,
+                                                            dec_rewards,
+                                                            balance,
+                                                        ),
                                                     );
                                                 }
 
@@ -831,7 +831,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                                 //     mut_epoch_hashes.best_hash.difficulty = 0;
                                                                 //     mut_epoch_hashes.submissions = HashMap::new();
                                                                 // }
-                                                                
+
                                                                 // break for (0..10), re-enter outer loop to restart
                                                                 break;
                                                             }
@@ -904,8 +904,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             } else {
                 // reset none solution counter
                 solution_is_none_counter = 0;
-                // tokio::time::sleep(Duration::from_secs(cutoff as u64)).await;
-                tokio::time::sleep(Duration::from_secs((cutoff - *app_buffer_time).max(0) as u64)).await;
+                tokio::time::sleep(Duration::from_secs(cutoff as u64)).await;
             };
         }
     });
@@ -955,7 +954,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             } else {
                                 0.0 // Handle the case where pool_rewards_dec is 0 to avoid division by zero
                             };
-                            
+
                             let message = format!(
                                 "Pool Submitted Difficulty: {}\nPool Earned:  {:.11} ORE\nPool Balance: {:.11}\n----------------------\nActive Miners: {}\n----------------------\nMiner Submitted Difficulty: {}\nMiner Earned: {:.11} ORE\n{:.2}% of total pool reward",
                                 msg.difficulty,
@@ -1009,7 +1008,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let text = msg.text.clone();
                         let socket = socket_sender.clone();
                         tokio::spawn(async move {
-                            if let Ok(_) = socket.socket.lock().await.send(Message::Text(text)).await {
+                            if let Ok(_) =
+                                socket.socket.lock().await.send(Message::Text(text)).await
+                            {
                             } else {
                                 error!("Failed to send client text");
                             }
@@ -1225,33 +1226,6 @@ fn process_message(
             let message_type = d[0];
             match message_type {
                 0 => {
-                    // // info!("Got Ready message");
-                    // let mut b_index = 1;
-
-                    // let mut pubkey = [0u8; 32];
-                    // for i in 0..32 {
-                    //     pubkey[i] = d[i + b_index];
-                    // }
-                    // b_index += 32;
-
-                    // let mut ts = [0u8; 8];
-                    // for i in 0..8 {
-                    //     ts[i] = d[i + b_index];
-                    // }
-
-                    // let ts = u64::from_le_bytes(ts);
-
-                    // let now = SystemTime::now()
-                    //     .duration_since(UNIX_EPOCH)
-                    //     .expect("Time went backwards")
-                    //     .as_secs();
-
-                    // let time_since = now - ts;
-                    // if time_since > 5 {
-                    //     error!("Client tried to ready up with expired signed message");
-                    //     return ControlFlow::Break(());
-                    // }
-
                     let msg = ClientMessage::Ready(who);
                     let _ = client_channel.send(msg);
                 }
@@ -1438,106 +1412,108 @@ async fn client_message_handler_system(
     app_pongs: Arc<RwLock<LastPong>>,
     min_difficulty: u32,
 ) {
-    while let Some(client_message) = receiver_channel.recv().await {
-        match client_message {
-            ClientMessage::Pong(addr) => {
-                let mut writer = app_pongs.write().await;
-                writer.pongs.insert(addr, Instant::now());
-                drop(writer);
-            }
-            ClientMessage::Ready(addr) => {
-                let ready_clients = ready_clients.clone();
-                tokio::spawn(async move {
-                    info!("Client {} is ready!", addr.to_string());
-                    let mut ready_clients = ready_clients.lock().await;
-                    ready_clients.insert(addr);
-                });
-            }
-            ClientMessage::Mining(addr) => {
-                info!("Client {} has started mining!", addr.to_string());
-            }
-            ClientMessage::BestSolution(addr, solution, pubkey) => {
-                let app_epoch_hashes = epoch_hashes.clone();
-                let app_proof = proof.clone();
-                let app_client_nonce_ranges = client_nonce_ranges.clone();
-                let app_state = app_state.clone();
-                tokio::spawn(async move {
-                    let epoch_hashes = app_epoch_hashes;
-                    let proof = app_proof;
-                    let client_nonce_ranges = app_client_nonce_ranges;
+    loop {
+        if let Some(client_message) = receiver_channel.recv().await {
+            match client_message {
+                ClientMessage::Pong(addr) => {
+                    let mut writer = app_pongs.write().await;
+                    writer.pongs.insert(addr, Instant::now());
+                    drop(writer);
+                }
+                ClientMessage::Ready(addr) => {
+                    let ready_clients = ready_clients.clone();
+                    tokio::spawn(async move {
+                        info!("Client {} is ready!", addr.to_string());
+                        let mut ready_clients = ready_clients.lock().await;
+                        ready_clients.insert(addr);
+                    });
+                }
+                ClientMessage::Mining(addr) => {
+                    info!("Client {} has started mining!", addr.to_string());
+                }
+                ClientMessage::BestSolution(addr, solution, pubkey) => {
+                    let app_epoch_hashes = epoch_hashes.clone();
+                    let app_proof = proof.clone();
+                    let app_client_nonce_ranges = client_nonce_ranges.clone();
+                    let app_state = app_state.clone();
+                    tokio::spawn(async move {
+                        let epoch_hashes = app_epoch_hashes;
+                        let proof = app_proof;
+                        let client_nonce_ranges = app_client_nonce_ranges;
 
-                    let pubkey_str = pubkey.to_string();
-                    let lock = proof.lock().await;
-                    let challenge = lock.challenge;
-                    drop(lock);
+                        let pubkey_str = pubkey.to_string();
+                        let lock = proof.lock().await;
+                        let challenge = lock.challenge;
+                        drop(lock);
 
-                    let reader = client_nonce_ranges.read().await;
-                    let nonce_range: Range<u64> = {
-                        if let Some(nr) = reader.get(&pubkey) {
-                            nr.clone()
-                        } else {
-                            error!("Client nonce range not set!");
+                        let reader = client_nonce_ranges.read().await;
+                        let nonce_range: Range<u64> = {
+                            if let Some(nr) = reader.get(&pubkey) {
+                                nr.clone()
+                            } else {
+                                error!("Client nonce range not set!");
+                                return;
+                            }
+                        };
+                        drop(reader);
+
+                        let nonce = u64::from_le_bytes(solution.n);
+
+                        if !nonce_range.contains(&nonce) {
+                            error!("Client submitted nonce out of assigned range");
                             return;
                         }
-                    };
-                    drop(reader);
-
-                    let nonce = u64::from_le_bytes(solution.n);
-
-                    if !nonce_range.contains(&nonce) {
-                        error!("Client submitted nonce out of assigned range");
-                        return;
-                    }
-
-                    let reader = app_state.read().await;
-                    if reader.sockets.get(&addr).is_none() {
-                        error!("Failed to get client socket for addr: {}", addr);
-                        return;
-                    }
-                    drop(reader);
-
-                    if solution.is_valid(&challenge) {
-                        let diff = solution.to_hash().difficulty();
-                        info!("{} found diff: {}", pubkey_str, diff);
-                        // if diff >= MIN_DIFF {
-                        if diff >= min_difficulty {
-                            // calculate rewards, only diff larger than min_difficulty(rather than MIN_DIFF) qualifies rewards calc.
-                            let mut hashpower = MIN_HASHPOWER * 2u64.pow(diff - MIN_DIFF);
-                            // if hashpower > 327_680 {
-                            //     hashpower = 327_680;
-                            // }
-                            if hashpower > 81_920 {
-                                hashpower = 81_920;
-                            }
-                            {
-                                let mut epoch_hashes = epoch_hashes.write().await;
-                                epoch_hashes.submissions.insert(pubkey, (diff, hashpower));
-                                if diff > epoch_hashes.best_hash.difficulty {
-                                    epoch_hashes.best_hash.difficulty = diff;
-                                    epoch_hashes.best_hash.solution = Some(solution);
-                                }
-                                drop(epoch_hashes);
-                            }
-                            tokio::time::sleep(Duration::from_millis(0)).await;
-                        } else {
-                            warn!("Diff too low, skipping");
-                        }
-                    } else {
-                        error!(
-                            "{} returned a solution which is invalid for the latest challenge!",
-                            pubkey
-                        );
 
                         let reader = app_state.read().await;
-                        if let Some(app_client_socket) = reader.sockets.get(&addr) {
-                            let _ = app_client_socket.socket.lock().await.send(Message::Text("Invalid solution. If this keeps happening, please contact support.".to_string())).await;
-                        } else {
+                        if reader.sockets.get(&addr).is_none() {
                             error!("Failed to get client socket for addr: {}", addr);
                             return;
                         }
                         drop(reader);
-                    }
-                });
+
+                        if solution.is_valid(&challenge) {
+                            let diff = solution.to_hash().difficulty();
+                            info!("{} found diff: {}", pubkey_str, diff);
+                            // if diff >= MIN_DIFF {
+                            if diff >= min_difficulty {
+                                // calculate rewards, only diff larger than min_difficulty(rather than MIN_DIFF) qualifies rewards calc.
+                                let mut hashpower = MIN_HASHPOWER * 2u64.pow(diff - MIN_DIFF);
+                                // if hashpower > 327_680 {
+                                //     hashpower = 327_680;
+                                // }
+                                if hashpower > 81_920 {
+                                    hashpower = 81_920;
+                                }
+                                {
+                                    let mut epoch_hashes = epoch_hashes.write().await;
+                                    epoch_hashes.submissions.insert(pubkey, (diff, hashpower));
+                                    if diff > epoch_hashes.best_hash.difficulty {
+                                        epoch_hashes.best_hash.difficulty = diff;
+                                        epoch_hashes.best_hash.solution = Some(solution);
+                                    }
+                                    drop(epoch_hashes);
+                                }
+                                tokio::time::sleep(Duration::from_millis(100)).await;
+                            } else {
+                                warn!("Diff too low, skipping");
+                            }
+                        } else {
+                            error!(
+                                "{} returned a solution which is invalid for the latest challenge!",
+                                pubkey
+                            );
+
+                            let reader = app_state.read().await;
+                            if let Some(app_client_socket) = reader.sockets.get(&addr) {
+                                let _ = app_client_socket.socket.lock().await.send(Message::Text("Invalid solution. If this keeps happening, please contact support.".to_string())).await;
+                            } else {
+                                error!("Failed to get client socket for addr: {}", addr);
+                                return;
+                            }
+                            drop(reader);
+                        }
+                    });
+                }
             }
         }
     }
@@ -1595,7 +1571,9 @@ async fn slack_messaging_system(
     loop {
         while let Some(slack_message) = receiver_channel.recv().await {
             match slack_message {
-            SlackMessage::Rewards(d, r, b) => slack_messaging(slack_webhook.clone(), d, r, b).await,
+                SlackMessage::Rewards(d, r, b) => {
+                    slack_messaging(slack_webhook.clone(), d, r, b).await
+                }
             }
         }
     }
@@ -1604,10 +1582,9 @@ async fn slack_messaging_system(
 // MI
 async fn slack_messaging(slack_webhook: String, difficulty: u32, rewards: f64, balance: f64) {
     let text = format!("D: {}\nR: {}\nB: {}", difficulty, rewards, balance);
-    let slack_webhook_url = url::Url::parse(&slack_webhook).expect("Failed to parse slack webhook url");
-    let message = SlackChannelMessage::builder()
-        .text(text)
-        .build();
+    let slack_webhook_url =
+        url::Url::parse(&slack_webhook).expect("Failed to parse slack webhook url");
+    let message = SlackChannelMessage::builder().text(text).build();
     let req = reqwest::Client::new()
         .post(slack_webhook_url)
         .json(&message);

@@ -24,6 +24,7 @@ use axum::{
 };
 use axum_extra::{headers::authorization::Basic, TypedHeader};
 use base64::{prelude::BASE64_STANDARD, Engine};
+use chrono::Local;
 use clap::{
     builder::{
         styling::{AnsiColor, Effects},
@@ -539,7 +540,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let app_all_clients_sender = all_clients_sender.clone();
     let app_slack_message_sender = slack_message_sender.clone();
     let app_slack_difficulty = slack_difficulty.clone();
-    let app_buffer_time = buffer_time.clone();
+    // let app_buffer_time = buffer_time.clone();
     let app_risk_time = risk_time.clone();
     tokio::spawn(async move {
         let rpc_client = app_rpc_client;
@@ -573,6 +574,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let mut success = false;
                     let reader = app_epoch_hashes.read().await;
                     let best_solution = reader.best_hash.solution.clone();
+                    let num_submissions = reader.submissions.len();
                     // let submissions = reader.submissions.clone();
                     drop(reader);
                     for i in 0..10 {
@@ -580,25 +582,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             let difficulty = best_solution.to_hash().difficulty();
 
                             info!(
-                                "Starting mine submission attempt {} with difficulty {}.",
+                                "Starting mine submission attempt {} with best difficulty {} of {} received submissions at {}.",
                                 i + 1,
-                                difficulty
+                                difficulty,
+                                num_submissions,
+                                Local::now().format("%Y-%m-%d %H:%M:%S").to_string()
                             );
                             info!("Getting latest _proof and busses data.");
                             if let Ok((_loaded_proof, (best_bus_id, _best_bus))) =
                                 get_proof_and_best_bus(&rpc_client, signer.pubkey()).await
                             {
                                 bus = best_bus_id;
-
-                                // // MI
-                                // info!("Sync latest proof data");
-                                // {
-                                //     let mut lock = app_proof.lock().await;
-                                //     // let mut update_app_proof = lock.clone();
-                                //     // update_app_proof = _loaded_proof;
-                                //     *lock = loaded_proof;
-                                //     drop(lock);
-                                // }
                             }
                             let _now = SystemTime::now()
                                 .duration_since(UNIX_EPOCH)
@@ -816,21 +810,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                             }
                                                             e if e == OreError::HashInvalid as u32 => {
                                                                 error!("Ore: The provided hash is invalid. See you next solution.");
-                                                                // // reset nonce
-                                                                // {
-                                                                //     info!("reset epoch nonce");
-                                                                //     let mut nonce = app_nonce.lock().await;
-                                                                //     *nonce = 0;
-                                                                // }
-                                                                // // reset epoch hashes
-                                                                // {
-                                                                //     info!("reset epoch hashes");
-                                                                //     let mut mut_epoch_hashes =
-                                                                //     app_epoch_hashes.write().await;
-                                                                //     mut_epoch_hashes.best_hash.solution = None;
-                                                                //     mut_epoch_hashes.best_hash.difficulty = 0;
-                                                                //     mut_epoch_hashes.submissions = HashMap::new();
-                                                                // }
 
                                                                 // break for (0..10), re-enter outer loop to restart
                                                                 break;
@@ -855,7 +834,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             }
                                         }
                                         // TODO: is sleep here necessary?, MI
-                                        tokio::time::sleep(Duration::from_millis(1_000)).await
+                                        tokio::time::sleep(Duration::from_millis(100)).await
                                     }
                                 }
                             } else {
@@ -883,16 +862,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             mut_epoch_hashes.submissions = HashMap::new();
                         }
                     }
-                    // MI
-                    // whether tx success or failure, we still want to sync latest proof data
-                    // if let Ok(loaded_proof) = get_proof(&rpc_client, signer.pubkey()).await {
-                    //     info!("Sync to make sure miners seeing latest proof data");
-                    //     {
-                    //         let mut lock = app_proof.lock().await;
-                    //         *lock = loaded_proof;
-                    //         drop(lock);
-                    //     }
-                    // }
                     tokio::time::sleep(Duration::from_millis(500)).await;
                 } else {
                     solution_is_none_counter += 1;
@@ -991,9 +960,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 } else {
                     error!("Failed to load balance");
                 }
-
-                // send slack message if diff >= slack diff
-                // slack_messaging(diff, pool_earned, pool_balance); // no need wait success
             }
         }
     });
@@ -1473,14 +1439,16 @@ async fn client_message_handler_system(
 
                         if solution.is_valid(&challenge) {
                             let diff = solution.to_hash().difficulty();
-                            info!("{} found diff: {}", pubkey_str, diff);
+                            info!(
+                                "{} found diff: {} at {}",
+                                pubkey_str,
+                                diff,
+                                Local::now().format("%Y-%m-%d %H:%M:%S").to_string()
+                            );
                             // if diff >= MIN_DIFF {
                             if diff >= min_difficulty {
                                 // calculate rewards, only diff larger than min_difficulty(rather than MIN_DIFF) qualifies rewards calc.
                                 let mut hashpower = MIN_HASHPOWER * 2u64.pow(diff - MIN_DIFF);
-                                // if hashpower > 327_680 {
-                                //     hashpower = 327_680;
-                                // }
                                 if hashpower > 81_920 {
                                     hashpower = 81_920;
                                 }

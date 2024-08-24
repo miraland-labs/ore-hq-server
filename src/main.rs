@@ -559,6 +559,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let slack_difficulty = app_slack_difficulty;
         // MI
         let mut solution_is_none_counter = 0;
+        let mut num_waiting = 0;
         loop {
             let lock = app_proof.lock().await;
             let mut old_proof = lock.clone();
@@ -601,11 +602,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let best_solution = reader.best_hash.solution.clone();
                         let num_submissions = reader.submissions.len();
                         // let submissions = reader.submissions.clone();
-                        // MI, wait until all active miners' submissions received.
+                        // MI, wait until all active miners' submissions received, and waiting times < 6.
                         // if min_difficulty is relative high, may always false
                         // num_submissions depends on min diff
-                        if num_submissions != num_active_miners {
+                        if num_submissions != num_active_miners && num_waiting < 6 {
+                            tokio::time::sleep(Duration::from_millis(500)).await;
+                            num_waiting += 1;
                             continue;
+                        } else {
+                            // reset waiting times
+                            num_waiting = 0;
                         }
 
                         drop(reader);

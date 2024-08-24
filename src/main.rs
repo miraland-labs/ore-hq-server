@@ -1488,7 +1488,8 @@ async fn client_message_handler_system(
                                     }
                                     drop(epoch_hashes);
                                 }
-                                tokio::time::sleep(Duration::from_millis(100)).await;
+                                // tokio::time::sleep(Duration::from_millis(100)).await;
+                                tokio::time::sleep(Duration::from_secs(0)).await;
                             } else {
                                 warn!("Diff too low, skipping");
                             }

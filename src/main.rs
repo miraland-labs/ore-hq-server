@@ -436,14 +436,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let rpc_client = app_rpc_client; // MI
         let ready_clients = app_ready_clients.clone(); // MI
         loop {
-            let mut clients = Vec::new();
-            {
-                let ready_clients_lock = ready_clients.lock().await;
-                for ready_client in ready_clients_lock.iter() {
-                    clients.push(ready_client.clone());
-                }
-                drop(ready_clients_lock);
-            };
+            // let mut clients = Vec::new();
+            // {
+            //     let ready_clients_lock = ready_clients.lock().await;
+            //     for ready_client in ready_clients_lock.iter() {
+            //         clients.push(ready_client.clone());
+            //     }
+            //     drop(ready_clients_lock);
+            // };
 
             let lock = app_proof.lock().await;
             let proof = lock.clone();
@@ -469,6 +469,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             if should_mine {
                 let challenge = proof.challenge;
+
+                // MI, move here from above
+                let mut clients = Vec::new();
+                {
+                    let ready_clients_lock = ready_clients.lock().await;
+                    for ready_client in ready_clients_lock.iter() {
+                        clients.push(ready_client.clone());
+                    }
+                    drop(ready_clients_lock);
+                };
 
                 for client in clients {
                     let nonce_range = {
@@ -892,11 +902,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             } else {
                 // reset none solution counter
                 solution_is_none_counter = 0;
-                // tokio::time::sleep(Duration::from_secs(cutoff as u64)).await;
-                tokio::time::sleep(Duration::from_secs(
-                    0.max(cutoff - *app_buffer_time as i64) as u64
-                ))
-                .await;
+                tokio::time::sleep(Duration::from_secs(cutoff as u64)).await;
             };
         }
     });
@@ -1431,6 +1437,10 @@ async fn client_message_handler_system(
                         let client_nonce_ranges = app_client_nonce_ranges;
 
                         let pubkey_str = pubkey.to_string();
+                        let len = pubkey_str.len();
+                        let short_pbukey_str =
+                            format!("{}...{}", &pubkey_str[0..6], &pubkey_str[len - 4..len]);
+
                         let lock = proof.lock().await;
                         let challenge = lock.challenge;
                         drop(lock);
@@ -1465,10 +1475,7 @@ async fn client_message_handler_system(
                             info!(
                                 "{} found diff: {} at {}",
                                 // pubkey_str,
-                                {
-                                    let len = pubkey_str.len();
-                                    format!("{}...{}", &pubkey_str[0..6], &pubkey_str[len - 4..len])
-                                },
+                                short_pbukey_str,
                                 diff,
                                 Local::now().format("%Y-%m-%d %H:%M:%S").to_string()
                             );
@@ -1496,7 +1503,8 @@ async fn client_message_handler_system(
                         } else {
                             error!(
                                 "{} returned a solution which is invalid for the latest challenge!",
-                                pubkey
+                                // pubkey
+                                short_pbukey_str
                             );
 
                             let reader = app_state.read().await;

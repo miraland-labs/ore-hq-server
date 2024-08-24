@@ -590,7 +590,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 let difficulty = best_solution.to_hash().difficulty();
 
                                 info!(
-                                "Starting mine submission attempt {} with diff {} of {} qualified submissions at {}.",
+                                // "Starting mine submission attempt {} with diff {} of {} qualified submissions at {}.",
+                                "Submitting attempt {} with diff {} of {} qualified submissions at {}.",
                                 i + 1,
                                 difficulty,
                                 num_submissions,
@@ -1464,7 +1465,10 @@ async fn client_message_handler_system(
                             info!(
                                 "{} found diff: {} at {}",
                                 // pubkey_str,
-                                &pubkey_str[0..6],
+                                {
+                                    let len = pubkey_str.len();
+                                    format!("{}...{}", &pubkey_str[0..6], &pubkey_str[len - 4..len])
+                                },
                                 diff,
                                 Local::now().format("%Y-%m-%d %H:%M:%S").to_string()
                             );

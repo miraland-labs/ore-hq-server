@@ -1427,7 +1427,7 @@ async fn client_message_handler_system(
                 ClientMessage::Ready(addr) => {
                     let ready_clients = ready_clients.clone();
                     tokio::spawn(async move {
-                        info!("Client {} is ready!", addr.to_string());
+                        // info!("Client {} is ready!", addr.to_string());
                         let mut ready_clients = ready_clients.lock().await;
                         ready_clients.insert(addr);
                     });

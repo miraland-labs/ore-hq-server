@@ -536,6 +536,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // let rpc_client = Arc::new(rpc_client); // delcared in previous
     let app_rpc_client = rpc_client.clone();
+    let app_shared_state = shared_state.clone();
     let app_proof = proof_ext.clone();
     let app_epoch_hashes = epoch_hashes.clone();
     let app_wallet = wallet_extension.clone();
@@ -584,6 +585,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let reader = app_epoch_hashes.read().await;
                     let solution = reader.best_hash.solution.clone();
                     drop(reader);
+
+                    // MI
+                    let shared_state_lock = app_shared_state.read().await;
+                    let num_active_miners = shared_state_lock.sockets.len();
+                    drop(shared_state_lock);
+
                     if solution.is_some() {
                         let signer = app_wallet.clone();
 
@@ -594,6 +601,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let best_solution = reader.best_hash.solution.clone();
                         let num_submissions = reader.submissions.len();
                         // let submissions = reader.submissions.clone();
+                        // MI, wait until all active miners' submissions received.
+                        // if min_difficulty is relative high, may always false
+                        // num_submissions depends on min diff
+                        if num_submissions != num_active_miners {
+                            continue;
+                        }
+
                         drop(reader);
                         for i in 0..10 {
                             if let Some(best_solution) = best_solution {
@@ -1495,8 +1509,8 @@ async fn client_message_handler_system(
                                     }
                                     drop(epoch_hashes);
                                 }
-                                // tokio::time::sleep(Duration::from_millis(100)).await;
-                                tokio::time::sleep(Duration::from_secs(0)).await;
+                                tokio::time::sleep(Duration::from_millis(10)).await;
+                                // tokio::time::sleep(Duration::from_secs(0)).await;
                             } else {
                                 warn!("Diff too low, skipping");
                             }

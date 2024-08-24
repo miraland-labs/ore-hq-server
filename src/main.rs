@@ -436,14 +436,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let rpc_client = app_rpc_client; // MI
         let ready_clients = app_ready_clients.clone(); // MI
         loop {
-            // let mut clients = Vec::new();
-            // {
-            //     let ready_clients_lock = ready_clients.lock().await;
-            //     for ready_client in ready_clients_lock.iter() {
-            //         clients.push(ready_client.clone());
-            //     }
-            //     drop(ready_clients_lock);
-            // };
+            let mut clients = Vec::new();
+            {
+                let ready_clients_lock = ready_clients.lock().await;
+                for ready_client in ready_clients_lock.iter() {
+                    clients.push(ready_client.clone());
+                }
+                drop(ready_clients_lock);
+            };
 
             let lock = app_proof.lock().await;
             let proof = lock.clone();
@@ -469,17 +469,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             if should_mine {
                 let challenge = proof.challenge;
-
-                // MI, move here from above
-                let mut clients = Vec::new();
-                {
-                    let ready_clients_lock = ready_clients.lock().await;
-                    for ready_client in ready_clients_lock.iter() {
-                        clients.push(ready_client.clone());
-                    }
-                    drop(ready_clients_lock);
-                };
-
                 for client in clients {
                     let nonce_range = {
                         let mut nonce = app_nonce.lock().await;
@@ -1438,7 +1427,7 @@ async fn client_message_handler_system(
                 ClientMessage::Ready(addr) => {
                     let ready_clients = ready_clients.clone();
                     tokio::spawn(async move {
-                        // info!("Client {} is ready!", addr.to_string());
+                        info!("Client {} is ready!", addr.to_string());
                         let mut ready_clients = ready_clients.lock().await;
                         ready_clients.insert(addr);
                     });

@@ -590,7 +590,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 let difficulty = best_solution.to_hash().difficulty();
 
                                 info!(
-                                "Starting mine submission attempt {} with best difficulty {} of {} received submissions at {}.",
+                                "Starting mine submission attempt {} with diff {} of {} qualified submissions at {}.",
                                 i + 1,
                                 difficulty,
                                 num_submissions,
@@ -1338,7 +1338,7 @@ async fn proof_tracking_system(ws_url: String, wallet: Arc<Keypair>, proof: Arc<
                     let data = response.value.data.decode();
                     if let Some(data_bytes) = data {
                         if let Ok(new_proof) = Proof::try_from_bytes(&data_bytes) {
-                            info!("Got new proof data");
+                            info!("Proof tracking got new proof data");
                             {
                                 let mut app_proof = app_proof.lock().await;
                                 *app_proof = *new_proof;
@@ -1411,7 +1411,7 @@ async fn client_message_handler_system(
                 ClientMessage::Ready(addr) => {
                     let ready_clients = ready_clients.clone();
                     tokio::spawn(async move {
-                        info!("Client {} is ready!", addr.to_string());
+                        // info!("Client {} is ready!", addr.to_string());
                         let mut ready_clients = ready_clients.lock().await;
                         ready_clients.insert(addr);
                     });
@@ -1463,7 +1463,8 @@ async fn client_message_handler_system(
                             let diff = solution.to_hash().difficulty();
                             info!(
                                 "{} found diff: {} at {}",
-                                pubkey_str,
+                                // pubkey_str,
+                                &pubkey_str[0..6],
                                 diff,
                                 Local::now().format("%Y-%m-%d %H:%M:%S").to_string()
                             );

@@ -86,6 +86,9 @@ const RPC_RETRIES: usize = 0;
 // const CONFIRM_RETRIES: usize = 8;
 // const CONFIRM_DELAY: u64 = 500;
 
+const SUBMIT_LIMIT: u32 = 5;
+const CHECK_LIMIT: usize = 30;
+
 #[derive(Clone)]
 struct ClientConnection {
     pubkey: Pubkey,
@@ -621,7 +624,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
 
                         drop(reader);
-                        for i in 0..10 {
+                        for i in 0..SUBMIT_LIMIT {
                             if let Some(best_solution) = best_solution {
                                 let difficulty = best_solution.to_hash().difficulty();
 
@@ -773,8 +776,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             }
 
                                             // update proof
+                                            // limit number of checking no more than CHECK_LIMIT
+                                            let mut num_checking = 0;
                                             loop {
-                                                info!("Waiting for proof hash update");
+                                                info!("Waiting for proof challenge update");
                                                 let latest_proof =
                                                     { app_proof.lock().await.clone() };
 
@@ -783,7 +788,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                     old_proof = latest_proof;
                                                     tokio::time::sleep(Duration::from_millis(500))
                                                         .await;
-                                                    continue;
+                                                    num_checking += 1;
+                                                    if num_checking < CHECK_LIMIT {
+                                                        continue;
+                                                    } else {
+                                                        warn!("No challenge update detected after {CHECK_LIMIT} checkpoints. No more waiting, just keep going...");
+                                                        break;
+                                                    }
+                                                    // MI
+                                                    // continue;
                                                 } else {
                                                     info!(
                                                     "Proof challenge updated! Checking rewards earned."
@@ -826,6 +839,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                         *mut_proof = latest_proof;
                                                     }
 
+                                                    info!("reset nonce and epoch hashes");
                                                     // reset nonce
                                                     {
                                                         info!("reset epoch nonce");
@@ -834,7 +848,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                     }
                                                     // reset epoch hashes
                                                     {
-                                                        info!("reset epoch hashes");
+                                                        // info!("reset epoch hashes");
                                                         let mut mut_epoch_hashes =
                                                             app_epoch_hashes.write().await;
                                                         mut_epoch_hashes.best_hash.solution = None;
@@ -910,7 +924,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             }
                         }
                         if !success {
-                            info!("Failed to send after 10 attempts or early return due to inner instruction error. Discarding and refreshing data.");
+                            error!("Failed to send either reached {SUBMIT_LIMIT} attempts or instruction error occurred. Discarding and refreshing data.");
+                            info!("reset nonce and epoch hashes");
                             // reset nonce
                             {
                                 let mut nonce = app_nonce.lock().await;
@@ -918,7 +933,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             }
                             // reset epoch hashes
                             {
-                                info!("reset epoch hashes");
+                                // info!("reset epoch hashes");
                                 let mut mut_epoch_hashes = app_epoch_hashes.write().await;
                                 mut_epoch_hashes.best_hash.solution = None;
                                 mut_epoch_hashes.best_hash.difficulty = 0;

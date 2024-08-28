@@ -82,7 +82,8 @@ mod utils;
 const MIN_HASHPOWER: u64 = 5;
 const MIN_DIFF: u32 = 5;
 
-const RPC_RETRIES: usize = 0;
+// MI: if 0, rpc node will retry the tx until it is finalized or until the blockhash expires
+const RPC_RETRIES: usize = 5;
 // const CONFIRM_RETRIES: usize = 8;
 // const CONFIRM_DELAY: u64 = 500;
 

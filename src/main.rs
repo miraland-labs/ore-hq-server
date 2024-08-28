@@ -1453,9 +1453,9 @@ async fn client_message_handler_system(
                         let short_pbukey_str =
                             format!("{}...{}", &pubkey_str[0..6], &pubkey_str[len - 4..len]);
 
-                        let lock = proof.lock().await;
-                        let challenge = lock.challenge;
-                        drop(lock);
+                        // let lock = proof.lock().await;
+                        // let challenge = lock.challenge;
+                        // drop(lock);
 
                         let reader = client_nonce_ranges.read().await;
                         let nonce_range: Range<u64> = {
@@ -1482,9 +1482,9 @@ async fn client_message_handler_system(
                         }
                         drop(reader);
 
-                    let lock = proof.lock().await;
-                    let challenge = lock.challenge;
-                    drop(lock);
+                        let lock = proof.lock().await;
+                        let challenge = lock.challenge;
+                        drop(lock);
                         if solution.is_valid(&challenge) {
                             let diff = solution.to_hash().difficulty();
                             info!(

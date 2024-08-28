@@ -624,7 +624,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 num_submissions,
                                 Local::now().format("%Y-%m-%d %H:%M:%S").to_string()
                             );
-                                info!("Getting latest _proof and busses data.");
+                                info!("Getting latest proof and busses data.");
                                 if let Ok((loaded_proof, (best_bus_id, _best_bus))) =
                                     get_proof_and_best_bus(&rpc_client, signer.pubkey()).await
                                 {
@@ -1364,15 +1364,18 @@ async fn proof_tracking_system(ws_url: String, wallet: Arc<Keypair>, proof: Arc<
                 )
                 .await;
 
-            info!("Subscribed tracking pool proof updates with websocket");
+            info!("Subscribed notification of pool proof updates via websocket");
             if let Ok((mut account_sub_notifications, _account_unsub)) = pubsub {
                 // MI: vanilla, since by design while let will exit when None received
                 while let Some(response) = account_sub_notifications.next().await {
                     let data = response.value.data.decode();
                     if let Some(data_bytes) = data {
                         if let Ok(new_proof) = Proof::try_from_bytes(&data_bytes) {
-                            info!("Proof tracking got new proof data");
-                            info!("Challenge: {}", BASE64_STANDARD.encode(new_proof.challenge));
+                            info!(
+                                "Received new proof with challenge: {}",
+                                BASE64_STANDARD.encode(new_proof.challenge)
+                            );
+                            // info!("Challenge: {}", BASE64_STANDARD.encode(new_proof.challenge));
                             {
                                 let mut app_proof = app_proof.lock().await;
                                 *app_proof = *new_proof;

@@ -842,7 +842,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                     info!("reset nonce and epoch hashes");
                                                     // reset nonce
                                                     {
-                                                        info!("reset epoch nonce");
+                                                        // info!("reset epoch nonce");
                                                         let mut nonce = app_nonce.lock().await;
                                                         *nonce = 0;
                                                     }
@@ -944,7 +944,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     } else {
                         solution_is_none_counter += 1;
                         if solution_is_none_counter % 5 == 0 {
-                            warn!("No best solution yet.");
+                            info!("No best solution yet.");
                         }
                         tokio::time::sleep(Duration::from_millis(1_000)).await;
                     }

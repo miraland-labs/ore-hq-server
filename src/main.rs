@@ -472,6 +472,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let proof = lock.clone();
                 drop(lock);
                 let challenge = proof.challenge;
+                info!(
+                    "Mission to clients with challenge: {}",
+                    BASE64_STANDARD.encode(challenge)
+                );
                 for client in clients {
                     let nonce_range = {
                         let mut nonce = app_nonce.lock().await;
@@ -620,10 +624,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 Local::now().format("%Y-%m-%d %H:%M:%S").to_string()
                             );
                                 info!("Getting latest _proof and busses data.");
-                                if let Ok((_loaded_proof, (best_bus_id, _best_bus))) =
+                                if let Ok((loaded_proof, (best_bus_id, _best_bus))) =
                                     get_proof_and_best_bus(&rpc_client, signer.pubkey()).await
                                 {
                                     bus = best_bus_id;
+
+                                    info!(
+                                        "Latest Challenge: {}",
+                                        BASE64_STANDARD.encode(loaded_proof.challenge)
+                                    );
+
+                                    if !best_solution.is_valid(&loaded_proof.challenge) {
+                                        error!("SOLUTION IS NOT VALID ANYMORE!");
+                                    }
                                 }
                                 let _now = SystemTime::now()
                                     .duration_since(UNIX_EPOCH)
@@ -758,7 +771,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                 if old_proof.challenge.eq(&latest_proof.challenge) {
                                                     info!("Proof challenge not updated yet..");
                                                     old_proof = latest_proof;
-                                                    tokio::time::sleep(Duration::from_millis(1000))
+                                                    tokio::time::sleep(Duration::from_millis(500))
                                                         .await;
                                                     continue;
                                                 } else {
@@ -1358,6 +1371,7 @@ async fn proof_tracking_system(ws_url: String, wallet: Arc<Keypair>, proof: Arc<
                     if let Some(data_bytes) = data {
                         if let Ok(new_proof) = Proof::try_from_bytes(&data_bytes) {
                             info!("Proof tracking got new proof data");
+                            info!("Challenge: {}", BASE64_STANDARD.encode(new_proof.challenge));
                             {
                                 let mut app_proof = app_proof.lock().await;
                                 *app_proof = *new_proof;
@@ -1510,8 +1524,7 @@ async fn client_message_handler_system(
                                     }
                                     drop(epoch_hashes);
                                 }
-                                tokio::time::sleep(Duration::from_millis(10)).await;
-                                // tokio::time::sleep(Duration::from_secs(0)).await;
+                                tokio::time::sleep(Duration::from_millis(100)).await;
                             } else {
                                 warn!("Diff too low, skipping");
                             }

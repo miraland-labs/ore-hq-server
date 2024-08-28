@@ -445,81 +445,82 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 drop(ready_clients_lock);
             };
 
-            let lock = app_proof.lock().await;
-            let proof = lock.clone();
-            drop(lock);
-
-            // let cutoff = get_cutoff(proof, *app_buffer_time); // MI
-            // let cutoff = get_cutoff(&rpc_client, proof, *app_buffer_time).await;
-            let cutoff = if (*app_risk_time).gt(&0) {
-                get_cutoff_with_risk(&rpc_client, proof, *app_buffer_time, *app_risk_time).await
-            } else {
-                get_cutoff(&rpc_client, proof, *app_buffer_time).await
-            };
-            let mut should_mine = true;
-            let cutoff = if cutoff <= 0 {
-                let solution = app_epoch_hashes.read().await.best_hash.solution;
-                if solution.is_some() {
-                    should_mine = false;
-                }
-                0
-            } else {
-                cutoff
-            };
-
-            if should_mine {
+            if clients.len() > 0 {
                 let lock = app_proof.lock().await;
                 let proof = lock.clone();
                 drop(lock);
-                let challenge = proof.challenge;
-                info!(
-                    "Mission to clients with challenge: {}",
-                    BASE64_STANDARD.encode(challenge)
-                );
-                for client in clients {
-                    let nonce_range = {
-                        let mut nonce = app_nonce.lock().await;
-                        let start = *nonce;
-                        // max hashes possible in 60s for a single client
-                        *nonce += 4_000_000;
-                        let end = *nonce;
-                        start..end
-                    };
-                    // message type is 8 bits = 1 u8
-                    // challenge is 256 bits = 32 u8
-                    // cutoff is 64 bits = 8 u8
-                    // nonce_range is 128 bits, start is 64 bits, end is 64 bits = 16 u8
-                    let mut bin_data = [0; 57];
-                    bin_data[00..1].copy_from_slice(&0u8.to_le_bytes());
-                    bin_data[01..33].copy_from_slice(&challenge);
-                    bin_data[33..41].copy_from_slice(&cutoff.to_le_bytes());
-                    bin_data[41..49].copy_from_slice(&nonce_range.start.to_le_bytes());
-                    bin_data[49..57].copy_from_slice(&nonce_range.end.to_le_bytes());
 
-                    let app_client_nonce_ranges = app_client_nonce_ranges.clone();
-                    let shared_state = app_shared_state.read().await;
-                    let sockets = shared_state.sockets.clone();
-                    drop(shared_state);
-                    if let Some(sender) = sockets.get(&client) {
-                        let sender = sender.clone();
-                        let ready_clients = ready_clients.clone();
-                        tokio::spawn(async move {
-                            let _ = sender
-                                .socket
-                                .lock()
-                                .await
-                                .send(Message::Binary(bin_data.to_vec()))
-                                .await;
-                            let _ = ready_clients.lock().await.remove(&client);
-                            let _ = app_client_nonce_ranges
-                                .write()
-                                .await
-                                .insert(sender.pubkey, nonce_range);
-                        });
+                // let cutoff = get_cutoff(proof, *app_buffer_time); // MI
+                // let cutoff = get_cutoff(&rpc_client, proof, *app_buffer_time).await;
+                let cutoff = if (*app_risk_time).gt(&0) {
+                    get_cutoff_with_risk(&rpc_client, proof, *app_buffer_time, *app_risk_time).await
+                } else {
+                    get_cutoff(&rpc_client, proof, *app_buffer_time).await
+                };
+                let mut should_mine = true;
+                let cutoff = if cutoff <= 0 {
+                    let solution = app_epoch_hashes.read().await.best_hash.solution;
+                    if solution.is_some() {
+                        should_mine = false;
+                    }
+                    0
+                } else {
+                    cutoff
+                };
+
+                if should_mine {
+                    let lock = app_proof.lock().await;
+                    let proof = lock.clone();
+                    drop(lock);
+                    let challenge = proof.challenge;
+                    info!(
+                        "Mission to clients with challenge: {}",
+                        BASE64_STANDARD.encode(challenge)
+                    );
+                    for client in clients {
+                        let nonce_range = {
+                            let mut nonce = app_nonce.lock().await;
+                            let start = *nonce;
+                            // max hashes possible in 60s for a single client
+                            *nonce += 4_000_000;
+                            let end = *nonce;
+                            start..end
+                        };
+                        // message type is 8 bits = 1 u8
+                        // challenge is 256 bits = 32 u8
+                        // cutoff is 64 bits = 8 u8
+                        // nonce_range is 128 bits, start is 64 bits, end is 64 bits = 16 u8
+                        let mut bin_data = [0; 57];
+                        bin_data[00..1].copy_from_slice(&0u8.to_le_bytes());
+                        bin_data[01..33].copy_from_slice(&challenge);
+                        bin_data[33..41].copy_from_slice(&cutoff.to_le_bytes());
+                        bin_data[41..49].copy_from_slice(&nonce_range.start.to_le_bytes());
+                        bin_data[49..57].copy_from_slice(&nonce_range.end.to_le_bytes());
+
+                        let app_client_nonce_ranges = app_client_nonce_ranges.clone();
+                        let shared_state = app_shared_state.read().await;
+                        let sockets = shared_state.sockets.clone();
+                        drop(shared_state);
+                        if let Some(sender) = sockets.get(&client) {
+                            let sender = sender.clone();
+                            let ready_clients = ready_clients.clone();
+                            tokio::spawn(async move {
+                                let _ = sender
+                                    .socket
+                                    .lock()
+                                    .await
+                                    .send(Message::Binary(bin_data.to_vec()))
+                                    .await;
+                                let _ = ready_clients.lock().await.remove(&client);
+                                let _ = app_client_nonce_ranges
+                                    .write()
+                                    .await
+                                    .insert(sender.pubkey, nonce_range);
+                            });
+                        }
                     }
                 }
             }
-
             tokio::time::sleep(Duration::from_secs(1)).await;
         }
     });

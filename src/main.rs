@@ -468,6 +468,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             };
 
             if should_mine {
+                let lock = app_proof.lock().await;
+                let proof = lock.clone();
+                drop(lock);
                 let challenge = proof.challenge;
                 for client in clients {
                     let nonce_range = {
@@ -1479,6 +1482,9 @@ async fn client_message_handler_system(
                         }
                         drop(reader);
 
+                    let lock = proof.lock().await;
+                    let challenge = lock.challenge;
+                    drop(lock);
                         if solution.is_valid(&challenge) {
                             let diff = solution.to_hash().difficulty();
                             info!(

@@ -781,6 +781,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             success = true;
                                             info!("Success!!");
                                             info!("Sig: {}", sig);
+
+                                            // as early as here(tx success) to allow entering next mining
+                                            // unset mining pause flag to open new mining mission
+                                            info!("resume new mining mission");
+                                            PAUSED.store(false, Relaxed);
+
                                             if !*app_no_sound_notification {
                                                 utils::play_sound();
                                             }
@@ -867,9 +873,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                             HashMap::new();
                                                     }
 
-                                                    // unset mining pause flag to start new mining mission
-                                                    info!("resume new mining mission");
-                                                    PAUSED.store(false, Relaxed);
+                                                    // // unset mining pause flag to start new mining mission
+                                                    // info!("resume new mining mission");
+                                                    // PAUSED.store(false, Relaxed);
 
                                                     // last one, notify slack channel if necessary
                                                     if difficulty.ge(&*slack_difficulty) {

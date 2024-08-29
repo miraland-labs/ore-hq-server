@@ -608,10 +608,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                     // start to process solution
                     if solution.is_some() {
-                        // set mining pause flag
-                        info!("pause new mining mission");
-                        PAUSED.store(true, Relaxed);
-
                         let signer = app_wallet.clone();
 
                         let mut bus = rand::thread_rng().gen_range(0..BUS_COUNT);
@@ -632,8 +628,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             // reset waiting times
                             num_waiting = 0;
                         }
-
                         drop(reader);
+
+                        // set mining pause flag before submitting best solution
+                        info!("pause new mining mission");
+                        PAUSED.store(true, Relaxed);
+
                         for i in 0..SUBMIT_LIMIT {
                             if let Some(best_solution) = best_solution {
                                 let difficulty = best_solution.to_hash().difficulty();

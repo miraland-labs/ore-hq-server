@@ -986,6 +986,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let app_wallet = wallet_extension.clone();
     tokio::spawn(async move {
         loop {
+            let mut sol_balance_checking = 0_u64;
             while let Some(msg) = mine_success_receiver.recv().await {
                 {
                     let decimals = 10f64.powf(ORE_TOKEN_DECIMALS as f64);
@@ -1055,14 +1056,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
 
-                if let Ok(balance) = app_rpc_client.get_balance(&app_wallet.pubkey()).await {
-                    info!(
-                        "Sol Balance: {:.2}",
-                        balance as f64 / LAMPORTS_PER_SOL as f64
-                    );
-                } else {
-                    error!("Failed to load balance");
+                if sol_balance_checking % 10 == 0 {
+                    if let Ok(balance) = app_rpc_client.get_balance(&app_wallet.pubkey()).await {
+                        info!(
+                            "Sol Balance: {:.2}",
+                            balance as f64 / LAMPORTS_PER_SOL as f64
+                        );
+                    } else {
+                        error!("Failed to load balance");
+                    }
                 }
+                sol_balance_checking += 1;
             }
         }
     });

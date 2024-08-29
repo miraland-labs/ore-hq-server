@@ -4,7 +4,10 @@ use std::{
     ops::{ControlFlow, Div, Range},
     path::Path,
     str::FromStr,
-    sync::Arc,
+    sync::{
+        atomic::{AtomicBool, Ordering::Relaxed},
+        Arc,
+    },
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
@@ -246,6 +249,7 @@ struct Args {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    static PAUSED: AtomicBool = AtomicBool::new(false);
     color_eyre::install().unwrap();
     dotenv::dotenv().ok();
     let args = Args::parse();
@@ -458,7 +462,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 drop(ready_clients_lock);
             };
 
-            if clients.len() > 0 {
+            if !PAUSED.load(Relaxed) && clients.len() > 0 {
                 let lock = app_proof.lock().await;
                 let proof = lock.clone();
                 drop(lock);
@@ -592,7 +596,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             };
             if cutoff <= 0 {
                 if cutoff <= -(*app_buffer_time as i64) {
-                    // process solutions
+                    // prepare to process solution
                     let reader = app_epoch_hashes.read().await;
                     let solution = reader.best_hash.solution.clone();
                     drop(reader);
@@ -602,7 +606,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let num_active_miners = shared_state_lock.sockets.len();
                     drop(shared_state_lock);
 
+                    // start to process solution
                     if solution.is_some() {
+                        // set mining pause flag
+                        info!("pause new mining mission");
+                        PAUSED.store(true, Relaxed);
+
                         let signer = app_wallet.clone();
 
                         let mut bus = rand::thread_rng().gen_range(0..BUS_COUNT);
@@ -858,6 +867,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                             HashMap::new();
                                                     }
 
+                                                    // unset mining pause flag to start new mining mission
+                                                    info!("resume new mining mission");
+                                                    PAUSED.store(false, Relaxed);
+
                                                     // last one, notify slack channel if necessary
                                                     if difficulty.ge(&*slack_difficulty) {
                                                         let _ = slack_message_sender.send(
@@ -940,6 +953,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 mut_epoch_hashes.best_hash.difficulty = 0;
                                 mut_epoch_hashes.submissions = HashMap::new();
                             }
+
+                            // unset mining pause flag to start new mining mission
+                            info!("resume new mining mission");
+                            PAUSED.store(false, Relaxed);
                         }
                         tokio::time::sleep(Duration::from_millis(500)).await;
                     } else {

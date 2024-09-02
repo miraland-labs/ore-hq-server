@@ -1002,7 +1002,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             }
                         }
                         if !success {
-                            error!("Failed to send either reached {SUBMIT_LIMIT} attempts or instruction error occurred. Discarding and refreshing data.");
+                            error!("Failed to submit tx... either reached {SUBMIT_LIMIT} attempts or ix error or invalid solution.");
+                            info!("Discarding and refreshing data...");
                             info!("reset nonce and epoch hashes");
                             // reset nonce
                             {

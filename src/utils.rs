@@ -1,6 +1,7 @@
 use cached::proc_macro::cached;
 use std::{
     io::Cursor,
+    time::Duration,
     // time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -158,6 +159,7 @@ pub async fn get_clock(client: &RpcClient) -> Clock {
                 info!("retry to get clock account...");
             }
         }
+        tokio::time::sleep(Duration::from_millis(100)).await;
     }
 
     bincode::deserialize::<Clock>(&data).expect("Failed to deserialize clock")

@@ -677,12 +677,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 num_submissions,
                                 Local::now().format("%Y-%m-%d %H:%M:%S").to_string()
                             );
-                                info!("Getting latest proof and busses data.");
-                                if let Ok((loaded_proof, (best_bus_id, _best_bus))) =
-                                    get_proof_and_best_bus(&rpc_client, signer.pubkey()).await
-                                {
-                                    bus = best_bus_id;
+                                // MI: retire this part since epoch = 5 mins which provide stable bus balances
+                                // MI: replaced this part with next simple section
+                                // info!("Getting latest proof and busses data.");
+                                // if let Ok((loaded_proof, (best_bus_id, _best_bus))) =
+                                //     get_proof_and_best_bus(&rpc_client, signer.pubkey()).await
+                                // {
+                                //     bus = best_bus_id;
 
+                                //     info!(
+                                //         "Latest Challenge: {}",
+                                //         BASE64_STANDARD.encode(loaded_proof.challenge)
+                                //     );
+
+                                //     if !best_solution.is_valid(&loaded_proof.challenge) {
+                                //         error!("SOLUTION IS NOT VALID ANYMORE!");
+                                //     }
+                                // }
+
+                                info!("Getting latest proof.");
+                                if let Ok(loaded_proof) =
+                                    get_proof(&rpc_client, signer.pubkey()).await
+                                {
                                     info!(
                                         "Latest Challenge: {}",
                                         BASE64_STANDARD.encode(loaded_proof.challenge)
@@ -690,8 +706,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                                     if !best_solution.is_valid(&loaded_proof.challenge) {
                                         error!("SOLUTION IS NOT VALID ANYMORE!");
+                                        break;
                                     }
                                 }
+
                                 let _now = SystemTime::now()
                                     .duration_since(UNIX_EPOCH)
                                     .expect("Time went backwards")

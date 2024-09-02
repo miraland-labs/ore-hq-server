@@ -59,8 +59,15 @@ use solana_sdk::{
 };
 use solana_transaction_status::UiTransactionEncoding;
 use utils::{
-    get_auth_ix, get_cutoff, get_cutoff_with_risk, get_mine_ix, get_proof, get_proof_and_best_bus,
-    get_register_ix, proof_pubkey, ORE_TOKEN_DECIMALS,
+    // get_proof_and_best_bus,
+    get_auth_ix,
+    get_cutoff,
+    get_cutoff_with_risk,
+    get_mine_ix,
+    get_proof,
+    get_register_ix,
+    proof_pubkey,
+    ORE_TOKEN_DECIMALS,
 };
 // use spl_associated_token_account::get_associated_token_address;
 use tokio::{
@@ -641,7 +648,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     if solution.is_some() {
                         let signer = app_wallet.clone();
 
-                        let mut bus = rand::thread_rng().gen_range(0..BUS_COUNT);
+                        let bus = rand::thread_rng().gen_range(0..BUS_COUNT);
 
                         let mut success = false;
                         let reader = app_epoch_hashes.read().await;
@@ -695,12 +702,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 //     }
                                 // }
 
-                                info!("Getting latest proof.");
+                                info!("Getting current proof.");
                                 if let Ok(loaded_proof) =
                                     get_proof(&rpc_client, signer.pubkey()).await
                                 {
                                     info!(
-                                        "Latest Challenge: {}",
+                                        "Current challenge: {}",
                                         BASE64_STANDARD.encode(loaded_proof.challenge)
                                     );
 

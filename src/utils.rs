@@ -52,7 +52,7 @@ pub async fn _get_config(client: &RpcClient) -> Result<ore_api::state::Config, S
 }
 
 // MI
-pub async fn get_proof_and_best_bus(
+pub async fn _get_proof_and_best_bus(
     client: &RpcClient,
     authority: Pubkey,
 ) -> Result<(Proof, (/* bus index: */ usize, /* bus address: */ Pubkey)), ()> {

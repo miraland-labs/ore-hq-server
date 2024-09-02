@@ -858,8 +858,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                 if old_proof.challenge.eq(&latest_proof.challenge) {
                                                     info!("Proof challenge not updated yet..");
                                                     old_proof = latest_proof;
-                                                    tokio::time::sleep(Duration::from_millis(500))
-                                                        .await;
+                                                    tokio::time::sleep(Duration::from_millis(
+                                                        1_000,
+                                                    ))
+                                                    .await;
                                                     num_checking += 1;
                                                     if num_checking < CHECK_LIMIT {
                                                         continue;

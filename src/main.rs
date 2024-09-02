@@ -1,5 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
+    fmt, io,
     net::SocketAddr,
     ops::{ControlFlow, Div, Range},
     path::Path,
@@ -131,6 +132,36 @@ pub enum ClientMessage {
 pub enum SlackMessage {
     // Rewards(/* difficulty: */ u32, /* rewards: */ f64, /* balance: */ f64),
     Rewards(u32, f64, f64),
+}
+
+#[derive(Debug)]
+enum SrcType {
+    Pool,
+    Solo,
+}
+
+impl fmt::Display for SrcType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            SrcType::Pool => write!(f, "pool"),
+            SrcType::Solo => write!(f, "solo"),
+        }
+    }
+}
+
+impl FromStr for SrcType {
+    type Err = io::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "pool" => Ok(SrcType::Pool),
+            "solo" => Ok(SrcType::Solo),
+            _ => Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Unknown source type",
+            )),
+        }
+    }
 }
 
 pub struct EpochHashes {
@@ -1660,7 +1691,7 @@ async fn slack_messaging_system(
         while let Some(slack_message) = receiver_channel.recv().await {
             match slack_message {
                 SlackMessage::Rewards(d, r, b) => {
-                    slack_messaging(slack_webhook.clone(), d, r, b).await
+                    slack_messaging(slack_webhook.clone(), SrcType::Pool, d, r, b).await
                 }
             }
         }
@@ -1668,8 +1699,17 @@ async fn slack_messaging_system(
 }
 
 // MI
-async fn slack_messaging(slack_webhook: String, difficulty: u32, rewards: f64, balance: f64) {
-    let text = format!("D: {}\nR: {}\nB: {}", difficulty, rewards, balance);
+async fn slack_messaging(
+    slack_webhook: String,
+    source: SrcType,
+    difficulty: u32,
+    rewards: f64,
+    balance: f64,
+) {
+    let text = format!(
+        "S: {}\nD: {}\nR: {}\nB: {}",
+        source, difficulty, rewards, balance
+    );
     let slack_webhook_url =
         url::Url::parse(&slack_webhook).expect("Failed to parse slack webhook url");
     let message = SlackChannelMessage::builder().text(text).build();

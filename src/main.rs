@@ -350,13 +350,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let wallet = read_keypair_file(wallet_path)
         .expect("Failed to load keypair from file: {wallet_path_str}");
-    info!("loaded wallet {}", wallet.pubkey().to_string());
+    let wallet_pubkey = wallet.pubkey();
+    info!("loaded wallet {}", wallet_pubkey.to_string());
 
     info!("establishing rpc connection...");
     let rpc_client = RpcClient::new_with_commitment(rpc_url, CommitmentConfig::confirmed());
 
     info!("loading sol balance...");
-    let balance = if let Ok(balance) = rpc_client.get_balance(&wallet.pubkey()).await {
+    let balance = if let Ok(balance) = rpc_client.get_balance(&wallet_pubkey).await {
         balance
     } else {
         return Err("Failed to load balance".into());
@@ -368,19 +369,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Err("Sol balance is too low!".into());
     }
 
-    let proof = if let Ok(loaded_proof) = get_proof(&rpc_client, wallet.pubkey()).await {
+    let proof = if let Ok(loaded_proof) = get_proof(&rpc_client, wallet_pubkey).await {
         loaded_proof
     } else {
         error!("Failed to load proof.");
         info!("Creating proof account...");
 
-        let ix = get_register_ix(wallet.pubkey());
+        let ix = get_register_ix(wallet_pubkey);
 
         if let Ok((hash, _slot)) = rpc_client
             .get_latest_blockhash_with_commitment(rpc_client.commitment())
             .await
         {
-            let mut tx = Transaction::new_with_payer(&[ix], Some(&wallet.pubkey()));
+            let mut tx = Transaction::new_with_payer(&[ix], Some(&wallet_pubkey));
 
             tx.sign(&[&wallet], hash);
 
@@ -397,7 +398,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 return Err("Failed to create proof account".into());
             }
         }
-        let proof = if let Ok(loaded_proof) = get_proof(&rpc_client, wallet.pubkey()).await {
+        let proof = if let Ok(loaded_proof) = get_proof(&rpc_client, wallet_pubkey).await {
             loaded_proof
         } else {
             return Err("Failed to get newly created proof".into());
@@ -1004,6 +1005,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         if !success {
                             error!("Failed to submit tx... either reached {SUBMIT_LIMIT} attempts or ix error or invalid solution.");
                             info!("Discarding and refreshing data...");
+                            info!("refresh proof");
+                            if let Ok(refreshed_proof) = get_proof(&rpc_client, wallet_pubkey).await
+                            {
+                                let mut app_proof = app_proof.lock().await;
+                                *app_proof = refreshed_proof;
+                                drop(app_proof);
+                            }
                             info!("reset nonce and epoch hashes");
                             // reset nonce
                             {

@@ -40,7 +40,7 @@ pub async fn migrate(rpc_client: &RpcClient, wallet: &Keypair, original_proof_ba
     let mut ixs = Vec::new();
     let prio_fee_ix = ComputeBudgetInstruction::set_compute_unit_price(20_000);
     ixs.push(prio_fee_ix);
-    let stake_ix = crate::ore_utils::get_stake_ix(wallet.pubkey(), wallet.pubkey(), original_proof_balance.saturating_add(ore_token_account_balance));
+    let stake_ix = crate::utils::get_stake_ix(wallet.pubkey(), wallet.pubkey(), original_proof_balance.saturating_add(ore_token_account_balance));
 
     ixs.push(stake_ix);
     let mut tx = Transaction::new_with_payer(&ixs, Some(&wallet.pubkey()));

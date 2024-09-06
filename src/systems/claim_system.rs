@@ -7,7 +7,7 @@ use spl_associated_token_account::get_associated_token_address;
 use tokio::time::Instant;
 use tracing::{error, info};
 
-use crate::{app_database::AppDatabase, ore_utils::{get_ore_mint, ORE_TOKEN_DECIMALS}, ClaimsQueue, InsertClaim, InsertTxn};
+use crate::{app_database::AppDatabase, utils::{get_ore_mint, ORE_TOKEN_DECIMALS}, ClaimsQueue, InsertClaim, InsertTransaction};
 
 
 pub async fn claim_system(claims_queue: Arc<ClaimsQueue>, rpc_client: Arc<RpcClient>, wallet: Arc<Keypair>, app_database: Arc<AppDatabase>) {
@@ -59,7 +59,7 @@ pub async fn claim_system(claims_queue: Arc<ClaimsQueue>, rpc_client: Arc<RpcCli
                 )
             }
 
-            let ix = crate::ore_utils::get_claim_ix(wallet.pubkey(), miner_token_account, amount);
+            let ix = crate::utils::get_claim_ix(wallet.pubkey(), miner_token_account, amount);
             ixs.push(ix);
 
             if let Ok((hash, _slot)) = rpc_client
@@ -136,8 +136,8 @@ pub async fn claim_system(claims_queue: Arc<ClaimsQueue>, rpc_client: Arc<RpcCli
                             tokio::time::sleep(Duration::from_millis(2000)).await;
                         }
 
-                        let itxn = InsertTxn {
-                            txn_type: "claim".to_string(),
+                        let itxn = InsertTransaction {
+                            transaction_type: "claim".to_string(),
                             signature: sig.to_string(),
                             priority_fee: prio_fee,
                         };

@@ -11,7 +11,7 @@ use tracing::error;
 
 use crate::{
 	app_rr_database,
-	ore_utils::{get_ore_mint, get_proof},
+	utils::{get_ore_mint, get_proof},
 	ChallengeWithDifficulty, Config, Transaction,
 };
 use std::{str::FromStr, sync::Arc};
